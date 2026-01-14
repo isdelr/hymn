@@ -16,9 +16,32 @@ This summary merges the official CurseForge guides you supplied with additional 
 ## Default Locations (Windows)
 - Root: `C:\Users\isaia\AppData\Roaming\Hytale`
 - Packs: `...\UserData\Packs\YourPackName`
-- Plugins (mods): `...\UserData\Mods`
+- Plugins (mods): `...\\UserData\\Mods` (observed `.jar` + `.zip` mods)
 - Early plugins: `...\earlyplugins` (create manually or use `--early-plugins`)
 - Dedicated server layout: `/hytale-server/mods`, `/plugins`, `/config`, `/worlds`
+
+## Observed Packaging (Local Install)
+- Mods in `UserData/Mods` commonly ship as **archives** with `manifest.json` at root.
+- Pack-only mods: `Common/` + `Server/` (no Java classes).
+- Plugin mods: Java classes + `manifest.json`, sometimes with `Common/` assets (`IncludesAssetPack`).
+
+### Example Manifests (Local)
+- **Pack-only** (Macaw’s Hy Paintings)
+  - `Group`: `SketchMacaw`
+  - `Name`: `Macaw's Hy Paintings`
+  - `Version`: `1.0.0`
+  - No `Main` or `IncludesAssetPack` fields
+- **Pack-only** (Violet’s Furnishings)
+  - `Group`: `Violet`
+  - `Name`: `Violet's Furnishings`
+  - `Version`: `0.1`
+  - No `Main` or `IncludesAssetPack` fields
+- **Plugin + assets** (Ymmersive Statues)
+  - `Group`: `Conczin`
+  - `Name`: `Ymmersive Statues`
+  - `Version`: `1.0.1`
+  - `Main`: `net.conczin.YmmersiveStatues`
+  - `IncludesAssetPack`: `true`
 
 ## Packs: Getting Started
 1. Create folder: `UserData/Packs/YourPackName`.

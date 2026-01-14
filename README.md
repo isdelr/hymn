@@ -6,6 +6,6 @@ Dark-mode Hytale mod manager built with Electron, React, Tailwind, and shadcn/ui
 Start here: `docs/README.md`
 
 ## Dev
-- `npm install`
-- `npm run dev`
-- `npm run build`
+- `bun install`
+- `bun run dev`
+- `bun run build`

@@ -21,6 +21,9 @@
   "path": "C:/Users/isaia/AppData/Roaming/Hytale/UserData/Packs/MyPack",
   "name": "MyPack",
   "version": "1.0.0",
+  "format": "directory",
+  "entryPoint": null,
+  "includesAssetPack": false,
   "enabled": true,
   "dependencies": [],
   "optionalDependencies": [],
@@ -63,4 +66,7 @@
 
 ## Notes
 - **Type values**: `pack`, `plugin`, `early-plugin`.
+- **Format values**: `directory`, `zip`, `jar`.
+- `entryPoint` uses the plugin `Main` class (or null for pack-only).
+- `includesAssetPack` mirrors the manifest flag.
 - Prefer **stable IDs** (`Group:Name`) from manifest files.

@@ -1,24 +1,17 @@
-import { ipcRenderer, contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
+import type { HymnApi } from '../src/shared/hymn-types'
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
-  },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.off(channel, ...omit)
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.send(channel, ...omit)
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.invoke(channel, ...omit)
-  },
+const api: HymnApi = {
+  getInstallInfo: () => ipcRenderer.invoke('hymn:get-install-info'),
+  selectInstallPath: () => ipcRenderer.invoke('hymn:select-install-path'),
+  scanMods: () => ipcRenderer.invoke('hymn:scan-mods'),
+  getProfiles: () => ipcRenderer.invoke('hymn:get-profiles'),
+  createProfile: (name: string) => ipcRenderer.invoke('hymn:create-profile', name),
+  updateProfile: (profile) => ipcRenderer.invoke('hymn:update-profile', profile),
+  setActiveProfile: (profileId: string) => ipcRenderer.invoke('hymn:set-active-profile', profileId),
+  applyProfile: (profileId: string) => ipcRenderer.invoke('hymn:apply-profile', profileId),
+  rollbackLastApply: () => ipcRenderer.invoke('hymn:rollback-last-apply'),
+}
 
-  // You can expose other APTs you need here.
-  // ...
-})
+contextBridge.exposeInMainWorld('hymn', api)
+
