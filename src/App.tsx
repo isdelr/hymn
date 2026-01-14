@@ -165,7 +165,7 @@ function App() {
     setApplyMessage(null)
     setApplyError(null)
     setApplyWarnings([])
-  }, [activeProfile?.id])
+  }, [activeProfile?.id, activeProfile?.notes])
 
   const loadInstallInfo = async () => {
     try {
