@@ -73,6 +73,66 @@ export interface ScanResult {
   warnings: string[]
 }
 
+export interface PackManifest {
+  Name: string
+  Group?: string
+  Version?: string
+  Description?: string
+  Authors?: Array<{ Name: string; Email?: string; Url?: string }>
+  Website?: string
+  ServerVersion?: string
+  Dependencies?: string[]
+  OptionalDependencies?: string[]
+  DisabledByDefault?: boolean
+  Main?: string
+  IncludesAssetPack?: boolean
+}
+
+export interface CreatePackOptions {
+  name: string
+  group?: string
+  version?: string
+  description?: string
+  authorName?: string
+  authorEmail?: string
+  location: 'packs' | 'mods'
+  includeCommon?: boolean
+  includeServer?: boolean
+}
+
+export interface CreatePackResult {
+  success: boolean
+  path: string
+  manifestPath: string
+  warnings: string[]
+}
+
+export interface BackupInfo {
+  id: string
+  createdAt: string
+  profileId: string
+  modCount: number
+}
+
+export interface ExportModpackOptions {
+  profileId: string
+  outputPath?: string
+  includeMods?: boolean
+}
+
+export interface ExportModpackResult {
+  success: boolean
+  outputPath: string
+  modCount: number
+}
+
+export interface ImportModpackResult {
+  success: boolean
+  profileId: string
+  modCount: number
+  warnings: string[]
+}
+
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
@@ -83,4 +143,11 @@ export interface HymnApi {
   setActiveProfile: (profileId: string) => Promise<ProfilesState>
   applyProfile: (profileId: string) => Promise<ApplyResult>
   rollbackLastApply: () => Promise<RollbackResult>
+  createPack: (options: CreatePackOptions) => Promise<CreatePackResult>
+  getBackups: () => Promise<BackupInfo[]>
+  restoreBackup: (backupId: string) => Promise<RollbackResult>
+  deleteBackup: (backupId: string) => Promise<{ success: boolean }>
+  exportModpack: (options: ExportModpackOptions) => Promise<ExportModpackResult>
+  importModpack: () => Promise<ImportModpackResult>
+  openInExplorer: (path: string) => Promise<void>
 }

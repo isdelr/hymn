@@ -140,6 +140,31 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       restoredAt: '2026-01-01T00:00:00Z',
       warnings: ['Rollback warning'],
     }),
+    createPack: vi.fn().mockResolvedValue({
+      success: true,
+      path: 'C:\\Hytale\\packs\\TestPack',
+      manifestPath: 'C:\\Hytale\\packs\\TestPack\\manifest.json',
+      warnings: [],
+    }),
+    getBackups: vi.fn().mockResolvedValue([]),
+    restoreBackup: vi.fn().mockResolvedValue({
+      snapshotId: 'backup-1',
+      restoredAt: '2026-01-01T00:00:00Z',
+      warnings: [],
+    }),
+    deleteBackup: vi.fn().mockResolvedValue({ success: true }),
+    exportModpack: vi.fn().mockResolvedValue({
+      success: true,
+      outputPath: 'C:\\Downloads\\modpack.hymnpack',
+      modCount: 3,
+    }),
+    importModpack: vi.fn().mockResolvedValue({
+      success: true,
+      profileId: 'imported-profile',
+      modCount: 2,
+      warnings: [],
+    }),
+    openInExplorer: vi.fn().mockResolvedValue(undefined),
   }
 
   const merged = { ...api, ...overrides } as HymnApi
@@ -152,6 +177,12 @@ const renderApp = async () => {
   const table = await screen.findByRole('table')
   await within(table).findByText('Alpha Pack')
   return table
+}
+
+const navigateToProfiles = async () => {
+  const user = userEvent.setup()
+  const profilesButton = await screen.findByRole('button', { name: /profiles/i })
+  await user.click(profilesButton)
 }
 
 describe('App', () => {
@@ -212,6 +243,7 @@ describe('App', () => {
     buildHymnApi(createFixtures())
 
     await renderApp()
+    await navigateToProfiles()
 
     expect(await screen.findByText('Profile warnings')).toBeInTheDocument()
     expect(
@@ -267,6 +299,7 @@ describe('App', () => {
     buildHymnApi(fixtures, { updateProfile })
 
     await renderApp()
+    await navigateToProfiles()
 
     const user = userEvent.setup()
     const moveDown = await screen.findByLabelText('Move Alpha Pack down')
@@ -296,6 +329,7 @@ describe('App', () => {
     buildHymnApi(fixtures, { applyProfile, rollbackLastApply })
 
     await renderApp()
+    await navigateToProfiles()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Apply Profile' }))

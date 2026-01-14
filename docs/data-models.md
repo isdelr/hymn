@@ -3,7 +3,7 @@
 ## App Settings
 ```json
 {
-  "installPath": "C:/Users/isaia/AppData/Roaming/Hytale",
+  "installPath": "%AppData%/Hytale",
   "lastProfileId": "default",
   "backupPolicy": {
     "enabled": true,
@@ -16,12 +16,13 @@
 ## Mod Entry
 ```json
 {
-  "id": "com.example:my-pack",
+  "id": "SketchMacaw:Macaw's Hy Paintings",
   "type": "pack",
-  "path": "C:/Users/isaia/AppData/Roaming/Hytale/UserData/Packs/MyPack",
-  "name": "MyPack",
+  "path": "%AppData%/Hytale/UserData/Mods/McwHyPaintings_1.0.0.zip",
+  "name": "Macaw's Hy Paintings",
+  "group": "SketchMacaw",
   "version": "1.0.0",
-  "format": "directory",
+  "format": "zip",
   "entryPoint": null,
   "includesAssetPack": false,
   "enabled": true,
@@ -36,8 +37,8 @@
 {
   "id": "creative-build",
   "name": "Creative Build",
-  "enabledMods": ["com.example:my-pack", "Hytale:BlockSpawnerPlugin"],
-  "loadOrder": ["com.example:my-pack"],
+  "enabledMods": ["SketchMacaw:Macaw's Hy Paintings", "Conczin:Ymmersive Statues"],
+  "loadOrder": ["SketchMacaw:Macaw's Hy Paintings", "Conczin:Ymmersive Statues"],
   "notes": "Builder tools + QoL"
 }
 ```
@@ -48,8 +49,8 @@
   "id": "2026-01-14T13-32-10Z",
   "profileId": "creative-build",
   "createdAt": "2026-01-14T13:32:10Z",
-  "location": "%AppData%/Hymn/backups/2026-01-14",
-  "mods": ["com.example:my-pack"]
+  "location": "%AppData%/Hymn/backups/2026-01-14T13-32-10Z",
+  "mods": ["SketchMacaw:Macaw's Hy Paintings"]
 }
 ```
 
@@ -59,14 +60,16 @@
   "id": "workspace-pack-1",
   "type": "pack",
   "root": "%AppData%/Hymn/workspaces/MyPack",
-  "manifestPath": "Server/manifest.json",
+  "manifestPath": "manifest.json",
   "status": "draft"
 }
 ```
 
 ## Notes
-- **Type values**: `pack`, `plugin`, `early-plugin`.
+- **Type values**: `pack`, `plugin`, `early-plugin`, `unknown`.
 - **Format values**: `directory`, `zip`, `jar`.
+- **Location values**: `packs`, `mods`, `earlyplugins`.
 - `entryPoint` uses the plugin `Main` class (or null for pack-only).
 - `includesAssetPack` mirrors the manifest flag.
-- Prefer **stable IDs** (`Group:Name`) from manifest files.
+- **ID format**: `Group:Name` when Group is present, otherwise just `Name`.
+- Dependencies can be an array `[]` or object `{}` in manifests.

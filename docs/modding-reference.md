@@ -14,7 +14,7 @@ This summary merges the official CurseForge guides you supplied with additional 
 - **Visual Scripting**: node-based system (coming soon).
 
 ## Default Locations (Windows)
-- Root: `C:\Users\isaia\AppData\Roaming\Hytale`
+- Root: `%AppData%\Hytale`
 - Packs: `...\UserData\Packs\YourPackName`
 - Plugins (mods): `...\\UserData\\Mods` (observed `.jar` + `.zip` mods)
 - Early plugins: `...\earlyplugins` (create manually or use `--early-plugins`)

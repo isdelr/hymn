@@ -11,7 +11,13 @@ const api: HymnApi = {
   setActiveProfile: (profileId: string) => ipcRenderer.invoke('hymn:set-active-profile', profileId),
   applyProfile: (profileId: string) => ipcRenderer.invoke('hymn:apply-profile', profileId),
   rollbackLastApply: () => ipcRenderer.invoke('hymn:rollback-last-apply'),
+  createPack: (options) => ipcRenderer.invoke('hymn:create-pack', options),
+  getBackups: () => ipcRenderer.invoke('hymn:get-backups'),
+  restoreBackup: (backupId: string) => ipcRenderer.invoke('hymn:restore-backup', backupId),
+  deleteBackup: (backupId: string) => ipcRenderer.invoke('hymn:delete-backup', backupId),
+  exportModpack: (options) => ipcRenderer.invoke('hymn:export-modpack', options),
+  importModpack: () => ipcRenderer.invoke('hymn:import-modpack'),
+  openInExplorer: (path: string) => ipcRenderer.invoke('hymn:open-in-explorer', path),
 }
 
 contextBridge.exposeInMainWorld('hymn', api)
-

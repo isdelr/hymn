@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import fs from "node:fs/promises";
@@ -9842,19 +9842,23 @@ function resolveModType(options) {
   }
   return "unknown";
 }
-function readManifestStringArray(value, label, warnings) {
+function readManifestDependencies(value, label, warnings) {
   if (value == null) {
     return [];
   }
-  if (!Array.isArray(value)) {
-    warnings.push(`${label} should be an array of strings.`);
-    return [];
+  if (Array.isArray(value)) {
+    const values = value.filter((item) => typeof item === "string");
+    if (values.length !== value.length) {
+      warnings.push(`${label} contains non-string entries.`);
+    }
+    return values;
   }
-  const values = value.filter((item) => typeof item === "string");
-  if (values.length !== value.length) {
-    warnings.push(`${label} contains non-string entries.`);
+  if (typeof value === "object" && value !== null) {
+    const keys = Object.keys(value);
+    return keys;
   }
-  return values;
+  warnings.push(`${label} should be an array or object.`);
+  return [];
 }
 function createModEntry(params) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i;
@@ -9882,8 +9886,8 @@ function createModEntry(params) {
   if (params.manifest && typeof params.manifest.Name !== "string") {
     entryWarnings.push("Manifest missing Name field.");
   }
-  const dependencies = readManifestStringArray((_h = params.manifest) == null ? void 0 : _h.Dependencies, "Dependencies", entryWarnings);
-  const optionalDependencies = readManifestStringArray(
+  const dependencies = readManifestDependencies((_h = params.manifest) == null ? void 0 : _h.Dependencies, "Dependencies", entryWarnings);
+  const optionalDependencies = readManifestDependencies(
     (_i = params.manifest) == null ? void 0 : _i.OptionalDependencies,
     "OptionalDependencies",
     entryWarnings
@@ -10248,6 +10252,216 @@ async function rollbackLastApply() {
     warnings
   };
 }
+async function createPack(options) {
+  var _a, _b, _c, _d, _e;
+  const info = await resolveInstallInfo();
+  if (!info.activePath) {
+    throw new Error("Hytale install path not configured.");
+  }
+  const warnings = [];
+  const packName = options.name.trim() || "NewPack";
+  const safeName = packName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const targetRoot = options.location === "packs" ? info.packsPath ?? path.join(info.activePath, "UserData", "Packs") : info.modsPath ?? path.join(info.activePath, "UserData", "Mods");
+  await ensureDir(targetRoot);
+  const packPath = path.join(targetRoot, safeName);
+  if (await pathExists(packPath)) {
+    throw new Error(`A pack named "${safeName}" already exists.`);
+  }
+  await ensureDir(packPath);
+  if (options.includeCommon !== false) {
+    await ensureDir(path.join(packPath, "Common"));
+    await ensureDir(path.join(packPath, "Common", "BlockTextures"));
+    await ensureDir(path.join(packPath, "Common", "Models"));
+  }
+  if (options.includeServer !== false) {
+    await ensureDir(path.join(packPath, "Server"));
+    await ensureDir(path.join(packPath, "Server", "Item"));
+    await ensureDir(path.join(packPath, "Server", "Item", "Items"));
+    await ensureDir(path.join(packPath, "Server", "Languages"));
+    await ensureDir(path.join(packPath, "Server", "Languages", "en-US"));
+  }
+  const manifest = {
+    Name: packName
+  };
+  if ((_a = options.group) == null ? void 0 : _a.trim()) {
+    manifest.Group = options.group.trim();
+  }
+  manifest.Version = ((_b = options.version) == null ? void 0 : _b.trim()) || "1.0.0";
+  if ((_c = options.description) == null ? void 0 : _c.trim()) {
+    manifest.Description = options.description.trim();
+  }
+  if ((_d = options.authorName) == null ? void 0 : _d.trim()) {
+    const author = { Name: options.authorName.trim() };
+    if ((_e = options.authorEmail) == null ? void 0 : _e.trim()) {
+      author.Email = options.authorEmail.trim();
+    }
+    manifest.Authors = [author];
+  }
+  const manifestPath = path.join(packPath, "manifest.json");
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+  if (options.includeServer !== false) {
+    const langContent = `${safeName}.name = ${packName}
+`;
+    await fs.writeFile(
+      path.join(packPath, "Server", "Languages", "en-US", "server.lang"),
+      langContent,
+      "utf-8"
+    );
+  }
+  return {
+    success: true,
+    path: packPath,
+    manifestPath,
+    warnings
+  };
+}
+async function getBackups() {
+  var _a;
+  const backupsRoot = getBackupsRoot();
+  if (!await pathExists(backupsRoot)) {
+    return [];
+  }
+  const entries = await fs.readdir(backupsRoot, { withFileTypes: true });
+  const backups = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const snapshotPath = path.join(backupsRoot, entry.name, SNAPSHOT_FILENAME);
+    if (!await pathExists(snapshotPath)) continue;
+    try {
+      const content = await fs.readFile(snapshotPath, "utf-8");
+      const snapshot = JSON.parse(content);
+      backups.push({
+        id: snapshot.id,
+        createdAt: snapshot.createdAt,
+        profileId: snapshot.profileId,
+        modCount: ((_a = snapshot.mods) == null ? void 0 : _a.length) ?? 0
+      });
+    } catch {
+      continue;
+    }
+  }
+  return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+async function restoreBackup(backupId) {
+  const snapshot = await readBackupSnapshot(backupId);
+  if (!snapshot) {
+    throw new Error("Backup snapshot not found.");
+  }
+  const snapshotRoot = snapshot.location;
+  if (!await pathExists(snapshotRoot)) {
+    throw new Error("Backup snapshot files not found.");
+  }
+  const info = await resolveInstallInfo();
+  if (!info.activePath) {
+    throw new Error("Hytale install path not configured.");
+  }
+  const scan = await scanMods();
+  await createBackupSnapshot(`pre-restore-${backupId}`, scan.entries, info);
+  const warnings = [];
+  await restoreSnapshotFolder(path.join(snapshotRoot, "mods"), getLocationPath(info, "mods"), LOCATION_LABELS.mods, warnings);
+  await restoreSnapshotFolder(path.join(snapshotRoot, "packs"), getLocationPath(info, "packs"), LOCATION_LABELS.packs, warnings);
+  await restoreSnapshotFolder(path.join(snapshotRoot, "earlyplugins"), getLocationPath(info, "earlyplugins"), LOCATION_LABELS.earlyplugins, warnings);
+  await restoreSnapshotFolder(path.join(snapshotRoot, "disabled"), getDisabledRoot(), "Disabled mods", warnings);
+  return {
+    snapshotId: backupId,
+    restoredAt: (/* @__PURE__ */ new Date()).toISOString(),
+    warnings
+  };
+}
+async function deleteBackup(backupId) {
+  const backupPath = path.join(getBackupsRoot(), backupId);
+  if (!await pathExists(backupPath)) {
+    throw new Error("Backup not found.");
+  }
+  await removePath(backupPath);
+  return { success: true };
+}
+async function exportModpack(options) {
+  const profiles = await getProfilesFromDatabase();
+  const profile = profiles.find((p) => p.id === options.profileId);
+  if (!profile) {
+    throw new Error("Profile not found.");
+  }
+  const scan = await scanMods();
+  const enabledMods = scan.entries.filter((entry) => profile.enabledMods.includes(entry.id));
+  const zip = new JSZip$1();
+  const modpackMeta = {
+    name: profile.name,
+    profileId: profile.id,
+    enabledMods: profile.enabledMods,
+    loadOrder: profile.loadOrder,
+    notes: profile.notes,
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    modCount: enabledMods.length
+  };
+  zip.file("modpack.json", JSON.stringify(modpackMeta, null, 2));
+  let outputPath = options.outputPath;
+  if (!outputPath) {
+    const result = await dialog.showSaveDialog({
+      title: "Export Modpack",
+      defaultPath: `${profile.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.hymnpack`,
+      filters: [{ name: "Hymn Modpack", extensions: ["hymnpack"] }]
+    });
+    if (result.canceled || !result.filePath) {
+      throw new Error("Export cancelled.");
+    }
+    outputPath = result.filePath;
+  }
+  const zipContent = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  await fs.writeFile(outputPath, zipContent);
+  return {
+    success: true,
+    outputPath,
+    modCount: enabledMods.length
+  };
+}
+async function importModpack() {
+  const result = await dialog.showOpenDialog({
+    title: "Import Modpack",
+    filters: [{ name: "Hymn Modpack", extensions: ["hymnpack"] }],
+    properties: ["openFile"]
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    throw new Error("Import cancelled.");
+  }
+  const filePath = result.filePaths[0];
+  const data = await fs.readFile(filePath);
+  const zip = await JSZip$1.loadAsync(data);
+  const modpackFile = zip.file("modpack.json");
+  if (!modpackFile) {
+    throw new Error("Invalid modpack: missing modpack.json");
+  }
+  const modpackContent = await modpackFile.async("string");
+  const modpackMeta = JSON.parse(modpackContent);
+  const warnings = [];
+  const state = await createProfile(modpackMeta.name || "Imported Profile");
+  const newProfile = state.profiles.find((p) => p.id === state.activeProfileId);
+  if (!newProfile) {
+    throw new Error("Failed to create profile.");
+  }
+  const scan = await scanMods();
+  const knownModIds = new Set(scan.entries.map((e) => e.id));
+  const validEnabledMods = modpackMeta.enabledMods.filter((id) => {
+    if (!knownModIds.has(id)) {
+      warnings.push(`Mod "${id}" not found in library.`);
+      return false;
+    }
+    return true;
+  });
+  const validLoadOrder = modpackMeta.loadOrder.filter((id) => knownModIds.has(id));
+  await updateProfile({
+    ...newProfile,
+    enabledMods: validEnabledMods,
+    loadOrder: validLoadOrder,
+    notes: modpackMeta.notes
+  });
+  return {
+    success: true,
+    profileId: newProfile.id,
+    modCount: validEnabledMods.length,
+    warnings
+  };
+}
 function registerIpcHandlers() {
   ipcMain.handle("hymn:get-install-info", async () => resolveInstallInfo());
   ipcMain.handle("hymn:select-install-path", async () => {
@@ -10269,6 +10483,15 @@ function registerIpcHandlers() {
   ipcMain.handle("hymn:set-active-profile", async (_event, profileId) => setActiveProfile(profileId));
   ipcMain.handle("hymn:apply-profile", async (_event, profileId) => applyProfile(profileId));
   ipcMain.handle("hymn:rollback-last-apply", async () => rollbackLastApply());
+  ipcMain.handle("hymn:create-pack", async (_event, options) => createPack(options));
+  ipcMain.handle("hymn:get-backups", async () => getBackups());
+  ipcMain.handle("hymn:restore-backup", async (_event, backupId) => restoreBackup(backupId));
+  ipcMain.handle("hymn:delete-backup", async (_event, backupId) => deleteBackup(backupId));
+  ipcMain.handle("hymn:export-modpack", async (_event, options) => exportModpack(options));
+  ipcMain.handle("hymn:import-modpack", async () => importModpack());
+  ipcMain.handle("hymn:open-in-explorer", async (_event, targetPath) => {
+    await shell.openPath(targetPath);
+  });
 }
 export {
   MAIN_DIST,

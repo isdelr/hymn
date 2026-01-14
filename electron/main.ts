@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import fs from 'node:fs/promises'
@@ -7,12 +7,19 @@ import { createClient, type Client } from '@libsql/client'
 import JSZip from 'jszip'
 import type {
   ApplyResult,
+  BackupInfo,
   BackupSnapshot,
+  CreatePackOptions,
+  CreatePackResult,
+  ExportModpackOptions,
+  ExportModpackResult,
+  ImportModpackResult,
   InstallInfo,
   ModEntry,
   ModFormat,
   ModLocation,
   ModType,
+  PackManifest,
   Profile,
   ProfilesState,
   RollbackResult,
@@ -532,19 +539,25 @@ function resolveModType(options: {
   return 'unknown'
 }
 
-function readManifestStringArray(value: unknown, label: string, warnings: string[]) {
+function readManifestDependencies(value: unknown, label: string, warnings: string[]) {
   if (value == null) {
     return []
   }
-  if (!Array.isArray(value)) {
-    warnings.push(`${label} should be an array of strings.`)
-    return []
+  // Handle array format: ["mod1", "mod2"]
+  if (Array.isArray(value)) {
+    const values = value.filter((item) => typeof item === 'string')
+    if (values.length !== value.length) {
+      warnings.push(`${label} contains non-string entries.`)
+    }
+    return values
   }
-  const values = value.filter((item) => typeof item === 'string')
-  if (values.length !== value.length) {
-    warnings.push(`${label} contains non-string entries.`)
+  // Handle object format: { "mod1": ">=1.0.0", "mod2": "*" } or empty {}
+  if (typeof value === 'object' && value !== null) {
+    const keys = Object.keys(value as Record<string, unknown>)
+    return keys
   }
-  return values
+  warnings.push(`${label} should be an array or object.`)
+  return []
 }
 
 function createModEntry(params: {
@@ -585,8 +598,8 @@ function createModEntry(params: {
     entryWarnings.push('Manifest missing Name field.')
   }
 
-  const dependencies = readManifestStringArray(params.manifest?.Dependencies, 'Dependencies', entryWarnings)
-  const optionalDependencies = readManifestStringArray(
+  const dependencies = readManifestDependencies(params.manifest?.Dependencies, 'Dependencies', entryWarnings)
+  const optionalDependencies = readManifestDependencies(
     params.manifest?.OptionalDependencies,
     'OptionalDependencies',
     entryWarnings,
@@ -1040,6 +1053,272 @@ async function rollbackLastApply(): Promise<RollbackResult> {
   }
 }
 
+async function createPack(options: CreatePackOptions): Promise<CreatePackResult> {
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  const warnings: string[] = []
+  const packName = options.name.trim() || 'NewPack'
+  const safeName = packName.replace(/[^a-zA-Z0-9_-]/g, '_')
+
+  const targetRoot = options.location === 'packs'
+    ? info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
+    : info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+
+  await ensureDir(targetRoot)
+
+  const packPath = path.join(targetRoot, safeName)
+  if (await pathExists(packPath)) {
+    throw new Error(`A pack named "${safeName}" already exists.`)
+  }
+
+  await ensureDir(packPath)
+
+  if (options.includeCommon !== false) {
+    await ensureDir(path.join(packPath, 'Common'))
+    await ensureDir(path.join(packPath, 'Common', 'BlockTextures'))
+    await ensureDir(path.join(packPath, 'Common', 'Models'))
+  }
+
+  if (options.includeServer !== false) {
+    await ensureDir(path.join(packPath, 'Server'))
+    await ensureDir(path.join(packPath, 'Server', 'Item'))
+    await ensureDir(path.join(packPath, 'Server', 'Item', 'Items'))
+    await ensureDir(path.join(packPath, 'Server', 'Languages'))
+    await ensureDir(path.join(packPath, 'Server', 'Languages', 'en-US'))
+  }
+
+  const manifest: PackManifest = {
+    Name: packName,
+  }
+
+  if (options.group?.trim()) {
+    manifest.Group = options.group.trim()
+  }
+
+  manifest.Version = options.version?.trim() || '1.0.0'
+
+  if (options.description?.trim()) {
+    manifest.Description = options.description.trim()
+  }
+
+  if (options.authorName?.trim()) {
+    const author: { Name: string; Email?: string } = { Name: options.authorName.trim() }
+    if (options.authorEmail?.trim()) {
+      author.Email = options.authorEmail.trim()
+    }
+    manifest.Authors = [author]
+  }
+
+  const manifestPath = path.join(packPath, 'manifest.json')
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8')
+
+  if (options.includeServer !== false) {
+    const langContent = `${safeName}.name = ${packName}\n`
+    await fs.writeFile(
+      path.join(packPath, 'Server', 'Languages', 'en-US', 'server.lang'),
+      langContent,
+      'utf-8',
+    )
+  }
+
+  return {
+    success: true,
+    path: packPath,
+    manifestPath,
+    warnings,
+  }
+}
+
+async function getBackups(): Promise<BackupInfo[]> {
+  const backupsRoot = getBackupsRoot()
+  if (!(await pathExists(backupsRoot))) {
+    return []
+  }
+
+  const entries = await fs.readdir(backupsRoot, { withFileTypes: true })
+  const backups: BackupInfo[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+
+    const snapshotPath = path.join(backupsRoot, entry.name, SNAPSHOT_FILENAME)
+    if (!(await pathExists(snapshotPath))) continue
+
+    try {
+      const content = await fs.readFile(snapshotPath, 'utf-8')
+      const snapshot = JSON.parse(content) as BackupSnapshot
+      backups.push({
+        id: snapshot.id,
+        createdAt: snapshot.createdAt,
+        profileId: snapshot.profileId,
+        modCount: snapshot.mods?.length ?? 0,
+      })
+    } catch {
+      continue
+    }
+  }
+
+  return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+async function restoreBackup(backupId: string): Promise<RollbackResult> {
+  const snapshot = await readBackupSnapshot(backupId)
+  if (!snapshot) {
+    throw new Error('Backup snapshot not found.')
+  }
+
+  const snapshotRoot = snapshot.location
+  if (!(await pathExists(snapshotRoot))) {
+    throw new Error('Backup snapshot files not found.')
+  }
+
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  const scan = await scanMods()
+  await createBackupSnapshot(`pre-restore-${backupId}`, scan.entries, info)
+
+  const warnings: string[] = []
+
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'), LOCATION_LABELS.mods, warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'packs'), getLocationPath(info, 'packs'), LOCATION_LABELS.packs, warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'earlyplugins'), getLocationPath(info, 'earlyplugins'), LOCATION_LABELS.earlyplugins, warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot(), 'Disabled mods', warnings)
+
+  return {
+    snapshotId: backupId,
+    restoredAt: new Date().toISOString(),
+    warnings,
+  }
+}
+
+async function deleteBackup(backupId: string): Promise<{ success: boolean }> {
+  const backupPath = path.join(getBackupsRoot(), backupId)
+  if (!(await pathExists(backupPath))) {
+    throw new Error('Backup not found.')
+  }
+
+  await removePath(backupPath)
+  return { success: true }
+}
+
+async function exportModpack(options: ExportModpackOptions): Promise<ExportModpackResult> {
+  const profiles = await getProfilesFromDatabase()
+  const profile = profiles.find((p) => p.id === options.profileId)
+  if (!profile) {
+    throw new Error('Profile not found.')
+  }
+
+  const scan = await scanMods()
+  const enabledMods = scan.entries.filter((entry) => profile.enabledMods.includes(entry.id))
+
+  const zip = new JSZip()
+
+  const modpackMeta = {
+    name: profile.name,
+    profileId: profile.id,
+    enabledMods: profile.enabledMods,
+    loadOrder: profile.loadOrder,
+    notes: profile.notes,
+    exportedAt: new Date().toISOString(),
+    modCount: enabledMods.length,
+  }
+
+  zip.file('modpack.json', JSON.stringify(modpackMeta, null, 2))
+
+  let outputPath = options.outputPath
+  if (!outputPath) {
+    const result = await dialog.showSaveDialog({
+      title: 'Export Modpack',
+      defaultPath: `${profile.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.hymnpack`,
+      filters: [{ name: 'Hymn Modpack', extensions: ['hymnpack'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      throw new Error('Export cancelled.')
+    }
+    outputPath = result.filePath
+  }
+
+  const zipContent = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  await fs.writeFile(outputPath, zipContent)
+
+  return {
+    success: true,
+    outputPath,
+    modCount: enabledMods.length,
+  }
+}
+
+async function importModpack(): Promise<ImportModpackResult> {
+  const result = await dialog.showOpenDialog({
+    title: 'Import Modpack',
+    filters: [{ name: 'Hymn Modpack', extensions: ['hymnpack'] }],
+    properties: ['openFile'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    throw new Error('Import cancelled.')
+  }
+
+  const filePath = result.filePaths[0]
+  const data = await fs.readFile(filePath)
+  const zip = await JSZip.loadAsync(data)
+
+  const modpackFile = zip.file('modpack.json')
+  if (!modpackFile) {
+    throw new Error('Invalid modpack: missing modpack.json')
+  }
+
+  const modpackContent = await modpackFile.async('string')
+  const modpackMeta = JSON.parse(modpackContent) as {
+    name: string
+    enabledMods: string[]
+    loadOrder: string[]
+    notes?: string
+  }
+
+  const warnings: string[] = []
+
+  const state = await createProfile(modpackMeta.name || 'Imported Profile')
+  const newProfile = state.profiles.find((p) => p.id === state.activeProfileId)
+  if (!newProfile) {
+    throw new Error('Failed to create profile.')
+  }
+
+  const scan = await scanMods()
+  const knownModIds = new Set(scan.entries.map((e) => e.id))
+
+  const validEnabledMods = modpackMeta.enabledMods.filter((id) => {
+    if (!knownModIds.has(id)) {
+      warnings.push(`Mod "${id}" not found in library.`)
+      return false
+    }
+    return true
+  })
+
+  const validLoadOrder = modpackMeta.loadOrder.filter((id) => knownModIds.has(id))
+
+  await updateProfile({
+    ...newProfile,
+    enabledMods: validEnabledMods,
+    loadOrder: validLoadOrder,
+    notes: modpackMeta.notes,
+  })
+
+  return {
+    success: true,
+    profileId: newProfile.id,
+    modCount: validEnabledMods.length,
+    warnings,
+  }
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('hymn:get-install-info', async () => resolveInstallInfo())
 
@@ -1065,4 +1344,13 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:set-active-profile', async (_event, profileId: string) => setActiveProfile(profileId))
   ipcMain.handle('hymn:apply-profile', async (_event, profileId: string) => applyProfile(profileId))
   ipcMain.handle('hymn:rollback-last-apply', async () => rollbackLastApply())
+  ipcMain.handle('hymn:create-pack', async (_event, options: CreatePackOptions) => createPack(options))
+  ipcMain.handle('hymn:get-backups', async () => getBackups())
+  ipcMain.handle('hymn:restore-backup', async (_event, backupId: string) => restoreBackup(backupId))
+  ipcMain.handle('hymn:delete-backup', async (_event, backupId: string) => deleteBackup(backupId))
+  ipcMain.handle('hymn:export-modpack', async (_event, options: ExportModpackOptions) => exportModpack(options))
+  ipcMain.handle('hymn:import-modpack', async () => importModpack())
+  ipcMain.handle('hymn:open-in-explorer', async (_event, targetPath: string) => {
+    await shell.openPath(targetPath)
+  })
 }
