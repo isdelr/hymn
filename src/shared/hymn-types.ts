@@ -4,6 +4,168 @@ export type ModLocation = 'mods' | 'packs' | 'earlyplugins'
 
 export type ModType = 'pack' | 'plugin' | 'early-plugin' | 'unknown'
 
+export type ModAssetKind = 'texture' | 'model' | 'animation' | 'audio' | 'other'
+
+export interface ModAsset {
+  id: string
+  name: string
+  relativePath: string
+  kind: ModAssetKind
+  size: number | null
+  previewDataUrl?: string
+}
+
+export interface ModAssetsOptions {
+  path: string
+  format: ModFormat
+  includePreviews?: boolean
+  maxPreviews?: number
+  maxPreviewBytes?: number
+  maxAssets?: number
+}
+
+export interface ModAssetsResult {
+  assets: ModAsset[]
+  warnings: string[]
+}
+
+export interface ModManifestOptions {
+  path: string
+  format: ModFormat
+}
+
+export interface ModManifestResult {
+  manifestPath: string | null
+  content: string | null
+  warnings: string[]
+  readOnly: boolean
+}
+
+export interface SaveManifestOptions {
+  path: string
+  format: ModFormat
+  content: string
+}
+
+export interface SaveManifestResult {
+  success: boolean
+  warnings: string[]
+}
+
+export interface ModBuildOptions {
+  path: string
+  task?: string
+}
+
+export interface ModBuildResult {
+  success: boolean
+  exitCode: number | null
+  output: string
+  durationMs: number
+  truncated: boolean
+}
+
+export type ServerAssetKind = 'item' | 'block' | 'category' | 'other'
+
+export interface ServerAsset {
+  id: string
+  name: string
+  relativePath: string
+  absolutePath: string
+  kind: ServerAssetKind
+  size: number | null
+}
+
+export interface ServerAssetListOptions {
+  path: string
+  maxAssets?: number
+}
+
+export interface ServerAssetListResult {
+  assets: ServerAsset[]
+  warnings: string[]
+}
+
+export type ServerAssetTemplate = 'item' | 'block' | 'category' | 'empty'
+
+export interface CreateServerAssetOptions {
+  path: string
+  destination: string
+  name: string
+  template: ServerAssetTemplate
+}
+
+export interface DuplicateServerAssetOptions {
+  path: string
+  source: string
+  destination: string
+}
+
+export interface MoveServerAssetOptions {
+  path: string
+  source: string
+  destination: string
+}
+
+export interface DeleteServerAssetOptions {
+  path: string
+  relativePath: string
+}
+
+export interface ServerAssetMutationResult {
+  success: boolean
+  asset: ServerAsset
+  warnings: string[]
+}
+
+export interface DeleteServerAssetResult {
+  success: boolean
+}
+
+export type VanillaAssetSourceType = 'zip' | 'filesystem'
+
+export interface VanillaAssetEntry {
+  id: string
+  name: string
+  sourceType: VanillaAssetSourceType
+  sourcePath?: string
+  archivePath?: string
+  entryPath?: string
+  relativePath: string
+  originRoot: string
+  size: number | null
+}
+
+export interface VanillaAssetListOptions {
+  maxAssets?: number
+  maxRoots?: number
+  offset?: number
+  limit?: number
+}
+
+export interface VanillaAssetListResult {
+  assets: VanillaAssetEntry[]
+  warnings: string[]
+  roots: string[]
+  hasMore: boolean
+  nextOffset: number
+}
+
+export interface ImportVanillaAssetOptions {
+  sourceType: VanillaAssetSourceType
+  sourcePath?: string
+  archivePath?: string
+  entryPath?: string
+  destinationPath: string
+  destinationRelativePath: string
+}
+
+export interface ImportVanillaAssetResult {
+  success: boolean
+  asset: ServerAsset
+  warnings: string[]
+}
+
 export interface ModEntry {
   id: string
   name: string
@@ -144,6 +306,17 @@ export interface HymnApi {
   applyProfile: (profileId: string) => Promise<ApplyResult>
   rollbackLastApply: () => Promise<RollbackResult>
   createPack: (options: CreatePackOptions) => Promise<CreatePackResult>
+  getModManifest: (options: ModManifestOptions) => Promise<ModManifestResult>
+  saveModManifest: (options: SaveManifestOptions) => Promise<SaveManifestResult>
+  listModAssets: (options: ModAssetsOptions) => Promise<ModAssetsResult>
+  buildMod: (options: ModBuildOptions) => Promise<ModBuildResult>
+  listServerAssets: (options: ServerAssetListOptions) => Promise<ServerAssetListResult>
+  createServerAsset: (options: CreateServerAssetOptions) => Promise<ServerAssetMutationResult>
+  duplicateServerAsset: (options: DuplicateServerAssetOptions) => Promise<ServerAssetMutationResult>
+  moveServerAsset: (options: MoveServerAssetOptions) => Promise<ServerAssetMutationResult>
+  deleteServerAsset: (options: DeleteServerAssetOptions) => Promise<DeleteServerAssetResult>
+  listVanillaAssets: (options: VanillaAssetListOptions) => Promise<VanillaAssetListResult>
+  importVanillaAsset: (options: ImportVanillaAssetOptions) => Promise<ImportVanillaAssetResult>
   getBackups: () => Promise<BackupInfo[]>
   restoreBackup: (backupId: string) => Promise<RollbackResult>
   deleteBackup: (backupId: string) => Promise<{ success: boolean }>

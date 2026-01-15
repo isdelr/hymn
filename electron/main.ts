@@ -1,10 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createWriteStream } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { createClient, type Client } from '@libsql/client'
 import JSZip from 'jszip'
+import * as yauzl from 'yauzl'
 import type {
   ApplyResult,
   BackupInfo,
@@ -15,15 +20,41 @@ import type {
   ExportModpackResult,
   ImportModpackResult,
   InstallInfo,
+  ModAsset,
+  ModAssetKind,
+  ModAssetsOptions,
+  ModAssetsResult,
+  ModBuildOptions,
+  ModBuildResult,
   ModEntry,
   ModFormat,
   ModLocation,
+  ModManifestOptions,
+  ModManifestResult,
   ModType,
   PackManifest,
   Profile,
   ProfilesState,
   RollbackResult,
+  SaveManifestOptions,
+  SaveManifestResult,
   ScanResult,
+  CreateServerAssetOptions,
+  DeleteServerAssetOptions,
+  DeleteServerAssetResult,
+  DuplicateServerAssetOptions,
+  ImportVanillaAssetOptions,
+  ImportVanillaAssetResult,
+  MoveServerAssetOptions,
+  ServerAsset,
+  ServerAssetKind,
+  ServerAssetListOptions,
+  ServerAssetListResult,
+  ServerAssetMutationResult,
+  ServerAssetTemplate,
+  VanillaAssetEntry,
+  VanillaAssetListOptions,
+  VanillaAssetListResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -507,12 +538,1069 @@ async function readManifestFromArchive(archivePath: string) {
   const hasClasses = files.some((file) => file.name.toLowerCase().endsWith('.class'))
 
   if (!manifestFile) {
-    return { manifest: null, hasClasses }
+    return { manifest: null, hasClasses, manifestPath: null }
   }
 
   const manifestRaw = await manifestFile.async('string')
   const manifest = JSON.parse(manifestRaw) as Record<string, unknown>
-  return { manifest, hasClasses }
+  return { manifest, hasClasses, manifestPath: manifestFile.name }
+}
+
+const ASSET_KIND_BY_EXTENSION: Record<string, ModAssetKind> = {
+  '.png': 'texture',
+  '.jpg': 'texture',
+  '.jpeg': 'texture',
+  '.webp': 'texture',
+  '.blockymodel': 'model',
+  '.blockyanim': 'animation',
+  '.ogg': 'audio',
+  '.wav': 'audio',
+}
+
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+}
+
+const DEFAULT_MAX_ASSETS = 200
+const DEFAULT_MAX_PREVIEWS = 24
+const DEFAULT_MAX_PREVIEW_BYTES = 500_000
+const MAX_BUILD_OUTPUT = 50_000
+const DEFAULT_MAX_SERVER_ASSETS = 300
+const DEFAULT_MAX_VANILLA_ASSETS = 100000
+const DEFAULT_MAX_VANILLA_ROOTS = 6
+const MAX_VANILLA_SCAN_DEPTH = 4
+
+const vanillaZipState: {
+  zipPath: string | null
+  zipfile: yauzl.ZipFile | null
+  entries: VanillaAssetEntry[]
+  isComplete: boolean
+  isReading: Promise<void> | null
+  warnings: string[]
+} = {
+  zipPath: null,
+  zipfile: null,
+  entries: [],
+  isComplete: false,
+  isReading: null,
+  warnings: [],
+}
+
+const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, label: string) => Record<string, unknown>> = {
+  item: (id, label) => ({
+    Id: id,
+    DisplayName: label,
+    MaxStack: 64,
+    Categories: [],
+  }),
+  block: (id, label) => ({
+    Id: id,
+    DisplayName: label,
+    Hardness: 1,
+  }),
+  category: (id, label) => ({
+    Id: id,
+    Label: label,
+    Icon: '',
+    Order: 0,
+    Children: [],
+  }),
+  empty: () => ({}),
+}
+
+function normalizeRelativePath(targetPath: string) {
+  return targetPath.split(path.sep).join('/')
+}
+
+function normalizeRelativeInput(value: string) {
+  return value.replace(/\\/g, '/').replace(/^\/+/, '').trim()
+}
+
+function ensureSafeRelativePath(root: string, relativePath: string) {
+  const normalized = normalizeRelativeInput(relativePath)
+  if (!normalized) {
+    throw new Error('Relative path is required.')
+  }
+  if (normalized.split('/').some((part) => part === '..')) {
+    throw new Error('Path cannot escape the mod folder.')
+  }
+  const resolved = path.resolve(root, normalized)
+  if (!isWithinPath(resolved, root)) {
+    throw new Error('Path must stay within the mod folder.')
+  }
+  return { normalized, resolved }
+}
+
+function ensureServerRelativePath(relativePath: string) {
+  const normalized = normalizeRelativeInput(relativePath)
+  if (!normalized.toLowerCase().startsWith('server/')) {
+    throw new Error('Server assets must be placed under Server/.')
+  }
+  return normalized
+}
+
+function normalizeAssetId(name: string) {
+  return name.replace(/\.json$/i, '').replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^_+/, '')
+}
+
+function formatAssetLabel(name: string) {
+  const stripped = name.replace(/\.json$/i, '')
+  return stripped.replace(/[-_]+/g, ' ').trim() || stripped
+}
+
+function resolveServerAssetKind(relativePath: string): ServerAssetKind {
+  const lowered = relativePath.toLowerCase()
+  if (lowered.includes('/item/items/')) return 'item'
+  if (lowered.includes('/item/blocks/')) return 'block'
+  if (lowered.includes('/item/category/')) return 'category'
+  if (lowered.includes('/blocks/')) return 'block'
+  return 'other'
+}
+
+async function buildServerAssetEntry(rootPath: string, filePath: string): Promise<ServerAsset> {
+  const relativePath = normalizeRelativePath(path.relative(rootPath, filePath))
+  const stat = await fs.stat(filePath)
+  return {
+    id: relativePath,
+    name: path.basename(filePath),
+    relativePath,
+    absolutePath: filePath,
+    kind: resolveServerAssetKind(relativePath),
+    size: stat.size,
+  }
+}
+
+async function findManifestPath(folderPath: string) {
+  const rootManifest = path.join(folderPath, 'manifest.json')
+  if (await pathExists(rootManifest)) return rootManifest
+  const serverManifest = path.join(folderPath, 'Server', 'manifest.json')
+  if (await pathExists(serverManifest)) return serverManifest
+  return null
+}
+
+function resolveAssetKind(extension: string): ModAssetKind {
+  return ASSET_KIND_BY_EXTENSION[extension] ?? 'other'
+}
+
+function createAssetEntry(params: {
+  name: string
+  relativePath: string
+  extension: string
+  size: number | null
+  previewDataUrl?: string
+}): ModAsset {
+  const kind = resolveAssetKind(params.extension)
+  return {
+    id: params.relativePath,
+    name: params.name,
+    relativePath: params.relativePath,
+    kind,
+    size: params.size,
+    previewDataUrl: params.previewDataUrl,
+  }
+}
+
+function getCandidateAssetRoots(rootPath: string, entries: string[]) {
+  const roots = [] as string[]
+  if (entries.includes('Common')) {
+    roots.push(path.join(rootPath, 'Common'))
+  }
+  if (entries.includes('Server')) {
+    roots.push(path.join(rootPath, 'Server'))
+  }
+  return roots.length ? roots : [rootPath]
+}
+
+async function listAssetsFromDirectory(options: ModAssetsOptions): Promise<ModAssetsResult> {
+  const assets: ModAsset[] = []
+  const warnings: string[] = []
+  const maxAssets = options.maxAssets ?? DEFAULT_MAX_ASSETS
+  const includePreviews = options.includePreviews !== false
+  const maxPreviews = options.maxPreviews ?? DEFAULT_MAX_PREVIEWS
+  const maxPreviewBytes = options.maxPreviewBytes ?? DEFAULT_MAX_PREVIEW_BYTES
+  let previewCount = 0
+
+  if (!(await pathExists(options.path))) {
+    return { assets, warnings: ['Mod folder not found.'] }
+  }
+
+  let rootEntries: string[] = []
+  try {
+    rootEntries = await fs.readdir(options.path)
+  } catch {
+    return { assets, warnings: ['Unable to read mod folder.'] }
+  }
+
+  const roots = getCandidateAssetRoots(options.path, rootEntries)
+
+  const visitDirectory = async (directory: string) => {
+    const entries = await fs.readdir(directory, { withFileTypes: true })
+    for (const entry of entries) {
+      if (assets.length >= maxAssets) return
+      const fullPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        await visitDirectory(fullPath)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const extension = path.extname(entry.name).toLowerCase()
+      if (!Object.prototype.hasOwnProperty.call(ASSET_KIND_BY_EXTENSION, extension)) continue
+      const relativePath = normalizeRelativePath(path.relative(options.path, fullPath))
+      let size: number | null = null
+      let previewDataUrl: string | undefined
+      try {
+        const stat = await fs.stat(fullPath)
+        size = stat.size
+        if (
+          includePreviews &&
+          previewCount < maxPreviews &&
+          IMAGE_MIME_BY_EXTENSION[extension] &&
+          stat.size <= maxPreviewBytes
+        ) {
+          const buffer = await fs.readFile(fullPath)
+          previewDataUrl = `data:${IMAGE_MIME_BY_EXTENSION[extension]};base64,${buffer.toString('base64')}`
+          previewCount += 1
+        }
+      } catch {
+        warnings.push(`Failed to read ${relativePath}.`)
+      }
+      assets.push(
+        createAssetEntry({
+          name: entry.name,
+          relativePath,
+          extension,
+          size,
+          previewDataUrl,
+        }),
+      )
+    }
+  }
+
+  for (const root of roots) {
+    if (assets.length >= maxAssets) break
+    await visitDirectory(root)
+  }
+
+  if (assets.length >= maxAssets) {
+    warnings.push(`Asset list capped at ${maxAssets} items.`)
+  }
+
+  return { assets, warnings }
+}
+
+async function listAssetsFromArchive(options: ModAssetsOptions): Promise<ModAssetsResult> {
+  const assets: ModAsset[] = []
+  const warnings: string[] = []
+  const maxAssets = options.maxAssets ?? DEFAULT_MAX_ASSETS
+  const includePreviews = options.includePreviews !== false
+  const maxPreviews = options.maxPreviews ?? DEFAULT_MAX_PREVIEWS
+  const maxPreviewBytes = options.maxPreviewBytes ?? DEFAULT_MAX_PREVIEW_BYTES
+  let previewCount = 0
+
+  if (!(await pathExists(options.path))) {
+    return { assets, warnings: ['Mod archive not found.'] }
+  }
+
+  const data = await fs.readFile(options.path)
+  const zip = await JSZip.loadAsync(data)
+  const files = Object.values(zip.files).filter((file) => !file.dir)
+
+  const hasCommon = files.some((file) => file.name.startsWith('Common/'))
+  const hasServer = files.some((file) => file.name.startsWith('Server/'))
+  const prefixes = (hasCommon || hasServer) ? ['Common/', 'Server/'] : ['']
+
+  for (const file of files) {
+    if (assets.length >= maxAssets) break
+    if (prefixes[0] && !prefixes.some((prefix) => file.name.startsWith(prefix))) {
+      continue
+    }
+    const extension = path.extname(file.name).toLowerCase()
+    if (!Object.prototype.hasOwnProperty.call(ASSET_KIND_BY_EXTENSION, extension)) continue
+    const relativePath = file.name
+    let size: number | null = null
+    let previewDataUrl: string | undefined
+    if (includePreviews && previewCount < maxPreviews && IMAGE_MIME_BY_EXTENSION[extension]) {
+      const buffer = await file.async('nodebuffer')
+      size = buffer.length
+      if (buffer.length <= maxPreviewBytes) {
+        previewDataUrl = `data:${IMAGE_MIME_BY_EXTENSION[extension]};base64,${buffer.toString('base64')}`
+        previewCount += 1
+      }
+    }
+    assets.push(
+      createAssetEntry({
+        name: path.basename(file.name),
+        relativePath,
+        extension,
+        size,
+        previewDataUrl,
+      }),
+    )
+  }
+
+  if (assets.length >= maxAssets) {
+    warnings.push(`Asset list capped at ${maxAssets} items.`)
+  }
+
+  return { assets, warnings }
+}
+
+async function listModAssets(options: ModAssetsOptions): Promise<ModAssetsResult> {
+  if (options.format === 'directory') {
+    return listAssetsFromDirectory(options)
+  }
+  return listAssetsFromArchive(options)
+}
+
+async function getModManifest(options: ModManifestOptions): Promise<ModManifestResult> {
+  const warnings: string[] = []
+  if (options.format !== 'directory') {
+    const result = await readManifestFromArchive(options.path)
+    if (!result.manifest) {
+      return {
+        manifestPath: result.manifestPath,
+        content: null,
+        warnings: ['manifest.json not found in archive.'],
+        readOnly: true,
+      }
+    }
+    return {
+      manifestPath: result.manifestPath,
+      content: JSON.stringify(result.manifest, null, 2),
+      warnings,
+      readOnly: true,
+    }
+  }
+
+  if (!(await pathExists(options.path))) {
+    return {
+      manifestPath: null,
+      content: null,
+      warnings: ['Mod folder not found.'],
+      readOnly: false,
+    }
+  }
+
+  const manifestPath = (await findManifestPath(options.path)) ?? path.join(options.path, 'manifest.json')
+
+  try {
+    if (await pathExists(manifestPath)) {
+      const content = await fs.readFile(manifestPath, 'utf-8')
+      return {
+        manifestPath,
+        content,
+        warnings,
+        readOnly: false,
+      }
+    }
+  } catch {
+    warnings.push('Failed to read manifest.json.')
+  }
+
+  warnings.push('manifest.json not found; saving will create a new file.')
+
+  return {
+    manifestPath,
+    content: null,
+    warnings,
+    readOnly: false,
+  }
+}
+
+async function saveModManifest(options: SaveManifestOptions): Promise<SaveManifestResult> {
+  if (options.format !== 'directory') {
+    throw new Error('Archived mods cannot be edited yet.')
+  }
+
+  if (!(await pathExists(options.path))) {
+    throw new Error('Mod folder not found.')
+  }
+
+  const warnings: string[] = []
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(options.content) as Record<string, unknown>
+  } catch {
+    throw new Error('Manifest JSON is invalid.')
+  }
+
+  const manifestPath = (await findManifestPath(options.path)) ?? path.join(options.path, 'manifest.json')
+  await ensureDir(path.dirname(manifestPath))
+  await fs.writeFile(manifestPath, JSON.stringify(parsed, null, 2), 'utf-8')
+
+  return { success: true, warnings }
+}
+
+async function runCommand(command: string, args: string[], cwd: string) {
+  return await new Promise<{
+    exitCode: number | null
+    output: string
+    durationMs: number
+    truncated: boolean
+  }>((resolve, reject) => {
+    const startedAt = Date.now()
+    let output = ''
+    let truncated = false
+
+    const appendOutput = (chunk: string) => {
+      output += chunk
+      if (output.length > MAX_BUILD_OUTPUT) {
+        output = output.slice(output.length - MAX_BUILD_OUTPUT)
+        truncated = true
+      }
+    }
+
+    const child = spawn(command, args, {
+      cwd,
+      shell: process.platform === 'win32',
+    })
+
+    child.stdout?.on('data', (data) => appendOutput(data.toString()))
+    child.stderr?.on('data', (data) => appendOutput(data.toString()))
+    child.on('error', (error) => reject(error))
+    child.on('close', (code) => {
+      resolve({
+        exitCode: code ?? null,
+        output,
+        durationMs: Date.now() - startedAt,
+        truncated,
+      })
+    })
+  })
+}
+
+async function buildMod(options: ModBuildOptions): Promise<ModBuildResult> {
+  if (!(await pathExists(options.path))) {
+    throw new Error('Workspace folder not found.')
+  }
+
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    throw new Error('Workspace path must be a folder.')
+  }
+
+  const windowsWrapper = path.join(options.path, 'gradlew.bat')
+  const unixWrapper = path.join(options.path, 'gradlew')
+  let wrapperPath = ''
+  if (await pathExists(windowsWrapper)) {
+    wrapperPath = windowsWrapper
+  } else if (await pathExists(unixWrapper)) {
+    wrapperPath = unixWrapper
+  }
+
+  if (!wrapperPath) {
+    throw new Error('Gradle wrapper not found in workspace.')
+  }
+
+  const taskArgs = options.task?.trim() ? options.task.trim().split(/\s+/) : ['build']
+
+  const result = await runCommand(wrapperPath, taskArgs, options.path)
+
+  return {
+    success: result.exitCode === 0,
+    exitCode: result.exitCode,
+    output: result.output,
+    durationMs: result.durationMs,
+    truncated: result.truncated,
+  }
+}
+
+async function listServerAssets(options: ServerAssetListOptions): Promise<ServerAssetListResult> {
+  const assets: ServerAsset[] = []
+  const warnings: string[] = []
+  const maxAssets = options.maxAssets ?? DEFAULT_MAX_SERVER_ASSETS
+
+  if (!(await pathExists(options.path))) {
+    return { assets, warnings: ['Mod folder not found.'] }
+  }
+
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    return { assets, warnings: ['Mod path must be a folder.'] }
+  }
+
+  const serverRoot = path.join(options.path, 'Server')
+  if (!(await pathExists(serverRoot))) {
+    return { assets, warnings: ['Server folder not found.'] }
+  }
+
+  const visitDirectory = async (directory: string) => {
+    let entries: Dirent[] = []
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true })
+    } catch {
+      warnings.push(`Unable to read ${normalizeRelativePath(path.relative(options.path, directory))}.`)
+      return
+    }
+    for (const entry of entries) {
+      if (assets.length >= maxAssets) return
+      const fullPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        await visitDirectory(fullPath)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (!entry.name.toLowerCase().endsWith('.json')) continue
+      if (entry.name.toLowerCase() === 'manifest.json') continue
+      try {
+        const asset = await buildServerAssetEntry(options.path, fullPath)
+        assets.push(asset)
+      } catch {
+        warnings.push(`Failed to read ${normalizeRelativePath(path.relative(options.path, fullPath))}.`)
+      }
+    }
+  }
+
+  await visitDirectory(serverRoot)
+
+  if (assets.length >= maxAssets) {
+    warnings.push(`Server asset list capped at ${maxAssets} files.`)
+  }
+
+  assets.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+
+  return { assets, warnings }
+}
+
+async function createServerAsset(options: CreateServerAssetOptions): Promise<ServerAssetMutationResult> {
+  const warnings: string[] = []
+
+  if (!(await pathExists(options.path))) {
+    throw new Error('Mod folder not found.')
+  }
+
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    throw new Error('Mod path must be a folder.')
+  }
+
+  const destination = ensureServerRelativePath(options.destination)
+  const { resolved: destinationPath } = ensureSafeRelativePath(options.path, destination)
+
+  const trimmedName = options.name.trim()
+  if (!trimmedName) {
+    throw new Error('Asset name is required.')
+  }
+  if (trimmedName.includes('/') || trimmedName.includes('\\')) {
+    throw new Error('Asset name cannot contain path separators.')
+  }
+
+  const rawFileName = trimmedName.toLowerCase().endsWith('.json') ? trimmedName : `${trimmedName}.json`
+  const fileName = rawFileName.replace(/[<>:"\\|?*]/g, '_')
+  if (fileName !== rawFileName) {
+    warnings.push('Invalid filename characters were replaced with underscores.')
+  }
+
+  const filePath = path.join(destinationPath, fileName)
+  if (!isWithinPath(filePath, options.path)) {
+    throw new Error('Asset must remain inside the mod folder.')
+  }
+  if (await pathExists(filePath)) {
+    throw new Error('An asset with this name already exists.')
+  }
+
+  await ensureDir(destinationPath)
+
+  const assetId = normalizeAssetId(fileName)
+  const label = formatAssetLabel(fileName)
+  const templateBuilder = SERVER_ASSET_TEMPLATE_BUILDERS[options.template] ?? SERVER_ASSET_TEMPLATE_BUILDERS.empty
+  const template = templateBuilder(assetId || 'Example_Id', label || 'Example Asset')
+  await fs.writeFile(filePath, JSON.stringify(template, null, 2), 'utf-8')
+
+  const asset = await buildServerAssetEntry(options.path, filePath)
+
+  return { success: true, asset, warnings }
+}
+
+async function duplicateServerAsset(options: DuplicateServerAssetOptions): Promise<ServerAssetMutationResult> {
+  const warnings: string[] = []
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    throw new Error('Mod path must be a folder.')
+  }
+  const sourceRelative = ensureServerRelativePath(options.source)
+  const destinationRelative = ensureServerRelativePath(options.destination)
+
+  const { resolved: sourcePath } = ensureSafeRelativePath(options.path, sourceRelative)
+  const { resolved: destinationPath } = ensureSafeRelativePath(options.path, destinationRelative)
+
+  if (!(await pathExists(sourcePath))) {
+    throw new Error('Source asset not found.')
+  }
+  if (await pathExists(destinationPath)) {
+    throw new Error('Destination already exists.')
+  }
+
+  await ensureDir(path.dirname(destinationPath))
+  await fs.copyFile(sourcePath, destinationPath)
+
+  const asset = await buildServerAssetEntry(options.path, destinationPath)
+
+  return { success: true, asset, warnings }
+}
+
+async function moveServerAsset(options: MoveServerAssetOptions): Promise<ServerAssetMutationResult> {
+  const warnings: string[] = []
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    throw new Error('Mod path must be a folder.')
+  }
+  const sourceRelative = ensureServerRelativePath(options.source)
+  const destinationRelative = ensureServerRelativePath(options.destination)
+
+  const { resolved: sourcePath } = ensureSafeRelativePath(options.path, sourceRelative)
+  const { resolved: destinationPath } = ensureSafeRelativePath(options.path, destinationRelative)
+
+  if (!(await pathExists(sourcePath))) {
+    throw new Error('Source asset not found.')
+  }
+  if (await pathExists(destinationPath)) {
+    throw new Error('Destination already exists.')
+  }
+
+  await ensureDir(path.dirname(destinationPath))
+  await movePath(sourcePath, destinationPath)
+
+  const asset = await buildServerAssetEntry(options.path, destinationPath)
+
+  return { success: true, asset, warnings }
+}
+
+async function deleteServerAsset(options: DeleteServerAssetOptions): Promise<DeleteServerAssetResult> {
+  const stat = await fs.stat(options.path)
+  if (!stat.isDirectory()) {
+    throw new Error('Mod path must be a folder.')
+  }
+  const relativePath = ensureServerRelativePath(options.relativePath)
+  const { resolved: targetPath } = ensureSafeRelativePath(options.path, relativePath)
+
+  if (!(await pathExists(targetPath))) {
+    throw new Error('Asset not found.')
+  }
+
+  await fs.rm(targetPath, { force: true })
+
+  return { success: true }
+}
+
+function shouldSkipVanillaDirectory(name: string) {
+  const lowered = name.toLowerCase()
+  return [
+    'node_modules',
+    '.git',
+    'logs',
+    'crashpad',
+    'cache',
+    'userdata',
+    'mods',
+    'packs',
+    'earlyplugins',
+    'hymn',
+  ].includes(lowered)
+}
+
+async function findVanillaAssetRoots(installPath: string, maxRoots: number) {
+  const roots = new Set<string>()
+  const queue: Array<{ path: string; depth: number }> = [{ path: installPath, depth: 0 }]
+
+  while (queue.length > 0 && roots.size < maxRoots) {
+    const current = queue.shift()
+    if (!current) continue
+    if (current.depth > MAX_VANILLA_SCAN_DEPTH) continue
+
+    let entries: Dirent[] = []
+    try {
+      entries = await fs.readdir(current.path, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (shouldSkipVanillaDirectory(entry.name)) continue
+      const fullPath = path.join(current.path, entry.name)
+      const lowerName = entry.name.toLowerCase()
+      if (['server', 'serverdata', 'data', 'assets'].includes(lowerName)) {
+        roots.add(fullPath)
+        if (roots.size >= maxRoots) break
+        continue
+      }
+      if (current.depth < MAX_VANILLA_SCAN_DEPTH) {
+        queue.push({ path: fullPath, depth: current.depth + 1 })
+      }
+    }
+  }
+
+  return Array.from(roots)
+}
+
+async function findAssetsZipPath(installPath: string) {
+  const gameRoot = path.join(installPath, 'install', 'release', 'package', 'game')
+  const latestPath = path.join(gameRoot, 'latest', 'Assets.zip')
+  if (await pathExists(latestPath)) {
+    return latestPath
+  }
+
+  if (!(await pathExists(gameRoot))) {
+    return null
+  }
+
+  const entries = await fs.readdir(gameRoot, { withFileTypes: true })
+  const buildDirs = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('build-'))
+    .map((entry) => entry.name)
+    .sort((a, b) => {
+      const aNum = Number.parseInt(a.replace('build-', ''), 10)
+      const bNum = Number.parseInt(b.replace('build-', ''), 10)
+      if (Number.isNaN(aNum) || Number.isNaN(bNum)) {
+        return b.localeCompare(a)
+      }
+      return bNum - aNum
+    })
+
+  for (const buildDir of buildDirs) {
+    const candidate = path.join(gameRoot, buildDir, 'Assets.zip')
+    if (await pathExists(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+function resetVanillaZipState(zipPath: string) {
+  if (vanillaZipState.zipfile) {
+    vanillaZipState.zipfile.close()
+  }
+  vanillaZipState.zipPath = zipPath
+  vanillaZipState.zipfile = null
+  vanillaZipState.entries = []
+  vanillaZipState.isComplete = false
+  vanillaZipState.isReading = null
+  vanillaZipState.warnings = []
+}
+
+async function openZipFile(zipPath: string) {
+  return await new Promise<yauzl.ZipFile>((resolve, reject) => {
+    yauzl.open(
+      zipPath,
+      { lazyEntries: true, autoClose: false },
+      (error, zipfile) => {
+        if (error || !zipfile) {
+          reject(error ?? new Error('Unable to open Assets.zip'))
+          return
+        }
+        resolve(zipfile)
+      },
+    )
+  })
+}
+
+async function readNextZipEntry(zipfile: yauzl.ZipFile) {
+  return await new Promise<yauzl.Entry | null>((resolve, reject) => {
+    const handleEntry = (entry: yauzl.Entry) => {
+      cleanup()
+      resolve(entry)
+    }
+
+    const handleEnd = () => {
+      cleanup()
+      resolve(null)
+    }
+
+    const handleError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+
+    const cleanup = () => {
+      zipfile.off('entry', handleEntry)
+      zipfile.off('end', handleEnd)
+      zipfile.off('error', handleError)
+    }
+
+    zipfile.once('entry', handleEntry)
+    zipfile.once('end', handleEnd)
+    zipfile.once('error', handleError)
+    zipfile.readEntry()
+  })
+}
+
+async function ensureVanillaZipEntries(zipPath: string, targetCount: number, maxAssets: number) {
+  if (vanillaZipState.zipPath !== zipPath) {
+    resetVanillaZipState(zipPath)
+  }
+
+  if (vanillaZipState.entries.length >= targetCount || vanillaZipState.isComplete) {
+    return
+  }
+
+  if (vanillaZipState.isReading) {
+    await vanillaZipState.isReading
+    if (vanillaZipState.entries.length >= targetCount || vanillaZipState.isComplete) {
+      return
+    }
+  }
+
+  vanillaZipState.isReading = (async () => {
+    if (!vanillaZipState.zipfile) {
+      vanillaZipState.zipfile = await openZipFile(zipPath)
+    }
+
+    const zipfile = vanillaZipState.zipfile
+
+    while (vanillaZipState.entries.length < targetCount && !vanillaZipState.isComplete) {
+      if (vanillaZipState.entries.length >= maxAssets) {
+        vanillaZipState.isComplete = true
+        vanillaZipState.warnings.push(`Vanilla asset list capped at ${maxAssets} files.`)
+        break
+      }
+
+      const entry = await readNextZipEntry(zipfile)
+      if (!entry) {
+        vanillaZipState.isComplete = true
+        break
+      }
+
+      if (entry.fileName.endsWith('/')) {
+        continue
+      }
+
+      const entryPath = entry.fileName.replace(/\\/g, '/')
+      vanillaZipState.entries.push({
+        id: `${zipPath}:${entryPath}`,
+        name: path.basename(entryPath),
+        sourceType: 'zip',
+        sourcePath: zipPath,
+        archivePath: zipPath,
+        entryPath,
+        relativePath: entryPath,
+        originRoot: zipPath,
+        size: Number.isFinite(entry.uncompressedSize) ? entry.uncompressedSize : null,
+      })
+    }
+
+    if (vanillaZipState.isComplete && vanillaZipState.zipfile) {
+      vanillaZipState.zipfile.close()
+      vanillaZipState.zipfile = null
+    }
+  })()
+
+  try {
+    await vanillaZipState.isReading
+  } finally {
+    vanillaZipState.isReading = null
+  }
+}
+
+async function listVanillaAssets(options: VanillaAssetListOptions): Promise<VanillaAssetListResult> {
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  const warnings: string[] = []
+  const maxAssets = options.maxAssets ?? DEFAULT_MAX_VANILLA_ASSETS
+  const maxRoots = options.maxRoots ?? DEFAULT_MAX_VANILLA_ROOTS
+  const offset = Math.max(options.offset ?? 0, 0)
+  const limit = Math.max(options.limit ?? 200, 1)
+  const targetCount = Math.min(offset + limit, maxAssets)
+  const assets: VanillaAssetEntry[] = []
+
+  const assetsZipPath = await findAssetsZipPath(info.activePath)
+  if (assetsZipPath) {
+    if (offset === 0 && vanillaZipState.zipPath === assetsZipPath) {
+      if (vanillaZipState.isReading) {
+        await vanillaZipState.isReading
+      }
+      resetVanillaZipState(assetsZipPath)
+    }
+    await ensureVanillaZipEntries(assetsZipPath, targetCount, maxAssets)
+    if (vanillaZipState.entries.length === 0 && vanillaZipState.isComplete) {
+      vanillaZipState.warnings.push('Assets.zip contained no files.')
+    }
+    const slice = vanillaZipState.entries.slice(offset, offset + limit)
+    const nextOffset = offset + slice.length
+    const hasMore = nextOffset < vanillaZipState.entries.length || !vanillaZipState.isComplete
+    return {
+      assets: slice,
+      warnings: vanillaZipState.warnings,
+      roots: [assetsZipPath],
+      hasMore,
+      nextOffset,
+    }
+  }
+
+  const roots = await findVanillaAssetRoots(info.activePath, maxRoots)
+  if (roots.length === 0) {
+    warnings.push('No vanilla asset folders detected under the install path.')
+    return { assets, warnings, roots, hasMore: false, nextOffset: offset }
+  }
+
+  const visitDirectory = async (root: string, directory: string) => {
+    let entries: Dirent[] = []
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true })
+    } catch {
+      return
+    }
+
+    for (const entry of entries) {
+      if (assets.length >= maxAssets) return
+      const fullPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (shouldSkipVanillaDirectory(entry.name)) continue
+        await visitDirectory(root, fullPath)
+        continue
+      }
+      if (!entry.isFile()) continue
+      try {
+        const stat = await fs.stat(fullPath)
+        const relativePath = normalizeRelativePath(path.relative(root, fullPath))
+        assets.push({
+          id: `${root}:${relativePath}`,
+          name: entry.name,
+          sourceType: 'filesystem',
+          sourcePath: fullPath,
+          relativePath,
+          originRoot: root,
+          size: stat.size,
+        })
+      } catch {
+        warnings.push(`Failed to read ${entry.name}.`)
+      }
+    }
+  }
+
+  for (const root of roots) {
+    if (assets.length >= maxAssets) break
+    await visitDirectory(root, root)
+  }
+
+  if (assets.length >= maxAssets) {
+    warnings.push(`Vanilla asset list capped at ${maxAssets} files.`)
+  }
+
+  assets.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+
+  const slicedAssets = assets.slice(offset, offset + limit)
+  const nextOffset = offset + slicedAssets.length
+  const hasMore = nextOffset < assets.length
+
+  return { assets: slicedAssets, warnings, roots, hasMore, nextOffset }
+}
+
+async function extractZipEntry(archivePath: string, entryPath: string, destinationPath: string) {
+  const zipfile = await openZipFile(archivePath)
+  const normalizedTarget = entryPath.replace(/\\/g, '/')
+
+  return await new Promise<void>((resolve, reject) => {
+    let resolved = false
+
+    const cleanup = () => {
+      zipfile.off('entry', handleEntry)
+      zipfile.off('end', handleEnd)
+      zipfile.off('error', handleError)
+    }
+
+    const finish = async (error?: Error | null) => {
+      if (resolved) return
+      resolved = true
+      cleanup()
+      zipfile.close()
+      if (error) {
+        reject(error)
+      } else {
+        resolve()
+      }
+    }
+
+    const handleEntry = (entry: yauzl.Entry) => {
+      if (entry.fileName.endsWith('/')) {
+        zipfile.readEntry()
+        return
+      }
+      const currentPath = entry.fileName.replace(/\\/g, '/')
+      if (currentPath !== normalizedTarget) {
+        zipfile.readEntry()
+        return
+      }
+
+      zipfile.openReadStream(entry, (error, readStream) => {
+        if (error || !readStream) {
+          void finish(error ?? new Error('Unable to read archive entry.'))
+          return
+        }
+        pipeline(readStream, createWriteStream(destinationPath))
+          .then(() => finish())
+          .catch((err) => finish(err instanceof Error ? err : new Error('Failed to write archive entry.')))
+      })
+    }
+
+    const handleEnd = () => {
+      void finish(new Error('Asset entry not found in archive.'))
+    }
+
+    const handleError = (error: Error) => {
+      void finish(error)
+    }
+
+    zipfile.on('entry', handleEntry)
+    zipfile.once('end', handleEnd)
+    zipfile.once('error', handleError)
+    zipfile.readEntry()
+  })
+}
+
+async function importVanillaAsset(options: ImportVanillaAssetOptions): Promise<ImportVanillaAssetResult> {
+  const warnings: string[] = []
+
+  if (!(await pathExists(options.destinationPath))) {
+    throw new Error('Destination mod folder not found.')
+  }
+
+  const destinationStat = await fs.stat(options.destinationPath)
+  if (!destinationStat.isDirectory()) {
+    throw new Error('Destination mod path must be a folder.')
+  }
+
+  const destinationRelative = options.destinationRelativePath.trim()
+  if (!destinationRelative) {
+    throw new Error('Destination path is required.')
+  }
+
+  const { resolved: destinationPath } = ensureSafeRelativePath(options.destinationPath, destinationRelative)
+
+  if (await pathExists(destinationPath)) {
+    throw new Error('Destination file already exists.')
+  }
+
+  await ensureDir(path.dirname(destinationPath))
+
+  if (options.sourceType === 'zip') {
+    if (!options.archivePath || !options.entryPath) {
+      throw new Error('Archive path and entry path are required.')
+    }
+    if (!(await pathExists(options.archivePath))) {
+      throw new Error('Source archive not found.')
+    }
+    await extractZipEntry(options.archivePath, options.entryPath, destinationPath)
+  } else {
+    if (!options.sourcePath) {
+      throw new Error('Source path is required.')
+    }
+    if (!(await pathExists(options.sourcePath))) {
+      throw new Error('Source asset not found.')
+    }
+    await fs.copyFile(options.sourcePath, destinationPath)
+  }
+
+  const asset = await buildServerAssetEntry(options.destinationPath, destinationPath)
+
+  return { success: true, asset, warnings }
 }
 
 function resolveModType(options: {
@@ -1345,6 +2433,26 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:apply-profile', async (_event, profileId: string) => applyProfile(profileId))
   ipcMain.handle('hymn:rollback-last-apply', async () => rollbackLastApply())
   ipcMain.handle('hymn:create-pack', async (_event, options: CreatePackOptions) => createPack(options))
+  ipcMain.handle('hymn:get-mod-manifest', async (_event, options: ModManifestOptions) => getModManifest(options))
+  ipcMain.handle('hymn:save-mod-manifest', async (_event, options: SaveManifestOptions) => saveModManifest(options))
+  ipcMain.handle('hymn:list-mod-assets', async (_event, options: ModAssetsOptions) => listModAssets(options))
+  ipcMain.handle('hymn:build-mod', async (_event, options: ModBuildOptions) => buildMod(options))
+  ipcMain.handle('hymn:list-server-assets', async (_event, options: ServerAssetListOptions) => listServerAssets(options))
+  ipcMain.handle('hymn:create-server-asset', async (_event, options: CreateServerAssetOptions) => createServerAsset(options))
+  ipcMain.handle(
+    'hymn:duplicate-server-asset',
+    async (_event, options: DuplicateServerAssetOptions) => duplicateServerAsset(options),
+  )
+  ipcMain.handle('hymn:move-server-asset', async (_event, options: MoveServerAssetOptions) => moveServerAsset(options))
+  ipcMain.handle(
+    'hymn:delete-server-asset',
+    async (_event, options: DeleteServerAssetOptions) => deleteServerAsset(options),
+  )
+  ipcMain.handle('hymn:list-vanilla-assets', async (_event, options: VanillaAssetListOptions) => listVanillaAssets(options))
+  ipcMain.handle(
+    'hymn:import-vanilla-asset',
+    async (_event, options: ImportVanillaAssetOptions) => importVanillaAsset(options),
+  )
   ipcMain.handle('hymn:get-backups', async () => getBackups())
   ipcMain.handle('hymn:restore-backup', async (_event, backupId: string) => restoreBackup(backupId))
   ipcMain.handle('hymn:delete-backup', async (_event, backupId: string) => deleteBackup(backupId))
