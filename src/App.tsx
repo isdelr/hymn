@@ -31,8 +31,8 @@ const sections = [
 type AppSection = (typeof sections)[number]['id']
 
 function AppContent() {
-  const { state, counts } = useAppContext()
-  const { installInfo, profilesState } = state
+  const { state } = useAppContext()
+  const { installInfo } = state
   const [activeSection, setActiveSection] = useState<AppSection>('mods')
 
   const activeSectionMeta = useMemo(() => {
@@ -110,25 +110,10 @@ function AppContent() {
       <main className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         {!showWelcome && (
-          <header className="flex items-center justify-between border-b border-border/50 px-8 py-4">
+          <header className="flex items-center border-b border-border/50 px-8 py-4">
             <div>
               <h1 className="text-xl font-semibold">{activeSectionMeta.label}</h1>
               <p className="text-sm text-muted-foreground">{activeSectionMeta.description}</p>
-            </div>
-            <div className="flex items-center gap-4">
-              {activeSection === 'mods' && (
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">Mods:</span>
-                    <span className="font-medium">{counts.total}</span>
-                  </div>
-                  <div className="h-4 w-px bg-border" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">Profiles:</span>
-                    <span className="font-medium">{profilesState?.profiles.length ?? 0}</span>
-                  </div>
-                </div>
-              )}
             </div>
           </header>
         )}

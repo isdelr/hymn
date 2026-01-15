@@ -232,13 +232,21 @@ async function initializeDatabase(db: DatabaseInstance) {
           name text not null,
           enabled_mods text not null,
           load_order text not null,
-          notes text
+          notes text,
+          readonly integer default 0
         );
         `,
       },
     ],
     'write',
   )
+
+  // Migration: add readonly column if it doesn't exist
+  try {
+    await db.execute('ALTER TABLE profiles ADD COLUMN readonly integer default 0')
+  } catch {
+    // Column already exists, ignore error
+  }
 }
 
 function openDatabase() {
@@ -307,30 +315,25 @@ function normalizeProfile(profile: Profile): Profile {
     enabledMods: Array.isArray(profile.enabledMods)
       ? profile.enabledMods.filter((item) => typeof item === 'string')
       : [],
-    loadOrder: Array.isArray(profile.loadOrder)
-      ? profile.loadOrder.filter((item) => typeof item === 'string')
-      : [],
-    notes: profile.notes?.trim() || undefined,
+    readonly: profile.readonly === true,
   }
 }
 
 async function getProfilesFromDatabase() {
   const db = await getDatabase()
   const result = await db.execute(
-    'select id, name, enabled_mods as enabledMods, load_order as loadOrder, notes from profiles order by name',
+    'select id, name, enabled_mods as enabledMods, readonly from profiles order by readonly desc, name',
   )
 
   return result.rows.map((row) => {
     const record = row as Record<string, unknown>
     const enabledMods = typeof record.enabledMods === 'string' ? record.enabledMods : '[]'
-    const loadOrder = typeof record.loadOrder === 'string' ? record.loadOrder : '[]'
 
     return {
       id: typeof record.id === 'string' ? record.id : '',
       name: typeof record.name === 'string' ? record.name : '',
       enabledMods: normalizeStringArray(enabledMods),
-      loadOrder: normalizeStringArray(loadOrder),
-      notes: typeof record.notes === 'string' ? record.notes : undefined,
+      readonly: record.readonly === 1,
     }
   })
 }
@@ -354,20 +357,20 @@ async function saveProfile(profile: Profile) {
   const normalized = normalizeProfile(profile)
   await db.execute({
     sql: `
-    insert into profiles (id, name, enabled_mods, load_order, notes)
+    insert into profiles (id, name, enabled_mods, load_order, readonly)
     values (?, ?, ?, ?, ?)
     on conflict(id) do update set
       name = excluded.name,
       enabled_mods = excluded.enabled_mods,
       load_order = excluded.load_order,
-      notes = excluded.notes
+      readonly = excluded.readonly
     `,
     args: [
       normalized.id,
       normalized.name,
       serializeStringArray(normalized.enabledMods),
-      serializeStringArray(normalized.loadOrder),
-      normalized.notes ?? null,
+      '[]',
+      normalized.readonly ? 1 : 0,
     ],
   })
   return normalized
@@ -401,14 +404,11 @@ async function createProfile(name: string): Promise<ProfilesState> {
     id = `${baseId}-${suffix}`
     suffix += 1
   }
-  const state = await getProfilesState()
-  const baseProfile = state.profiles.find((profile) => profile.id === state.activeProfileId)
   const profile: Profile = {
     id,
     name: profileName,
-    enabledMods: baseProfile ? [...baseProfile.enabledMods] : [],
-    loadOrder: baseProfile ? [...baseProfile.loadOrder] : [],
-    notes: baseProfile?.notes,
+    enabledMods: [],
+    readonly: false,
   }
   await saveProfile(profile)
   activeProfileId = profile.id
@@ -417,6 +417,11 @@ async function createProfile(name: string): Promise<ProfilesState> {
 }
 
 async function updateProfile(profile: Profile): Promise<Profile> {
+  // Prevent modifications to readonly profiles
+  const existing = (await getProfilesFromDatabase()).find((p) => p.id === profile.id)
+  if (existing?.readonly) {
+    throw new Error('Cannot modify readonly profile')
+  }
   const normalized = await saveProfile(profile)
   return normalized
 }
@@ -436,37 +441,53 @@ async function ensureDefaultProfile() {
   if (profiles.length > 0) {
     return
   }
-  await saveProfile({
-    id: 'default',
-    name: 'Default',
-    enabledMods: [],
-    loadOrder: [],
-    notes: 'Base loadout for new installs.',
-  })
-  activeProfileId = 'default'
-  await writeSetting(SETTINGS_KEYS.activeProfile, activeProfileId)
+  // Don't create default profile here - it will be created when scanning
+  // with the actual mod state from the folders
 }
 
 async function seedProfilesFromScan(entries: ModEntry[]) {
-  if (profilesSeeded || entries.length === 0) {
+  if (profilesSeeded) {
     return
   }
-  const state = await getProfilesState()
-  const activeProfile = state.profiles.find((profile) => profile.id === state.activeProfileId)
-  if (!activeProfile) {
-    return
-  }
-  if (activeProfile.enabledMods.length === 0 && activeProfile.loadOrder.length === 0) {
+
+  const profiles = await getProfilesFromDatabase()
+  const hasDefaultProfile = profiles.some((p) => p.id === 'default' && p.readonly)
+
+  if (!hasDefaultProfile) {
+    // Create readonly Default profile with current mod state
     const enabledMods = entries.filter((entry) => entry.enabled).map((entry) => entry.id)
-    const loadOrder = entries.map((entry) => entry.id)
     await saveProfile({
-      ...activeProfile,
+      id: 'default',
+      name: 'Default',
       enabledMods,
-      loadOrder,
+      readonly: true,
     })
+    activeProfileId = 'default'
+    await writeSetting(SETTINGS_KEYS.activeProfile, activeProfileId)
   }
+
   profilesSeeded = true
   await writeSetting(SETTINGS_KEYS.profilesSeeded, 'true')
+}
+
+async function syncDefaultProfileFromScan(entries: ModEntry[]) {
+  const profiles = await getProfilesFromDatabase()
+  const defaultProfile = profiles.find((profile) => profile.id === 'default' && profile.readonly)
+  if (!defaultProfile) return
+
+  const enabledMods = entries.filter((entry) => entry.enabled).map((entry) => entry.id)
+  const uniqueEnabled = Array.from(new Set(enabledMods))
+  const current = defaultProfile.enabledMods
+  const hasChanges =
+    uniqueEnabled.length !== current.length || uniqueEnabled.some((id) => !current.includes(id))
+
+  if (!hasChanges) return
+
+  await saveProfile({
+    ...defaultProfile,
+    enabledMods: uniqueEnabled,
+    readonly: true,
+  })
 }
 
 async function resolveInstallInfo(): Promise<InstallInfo> {
@@ -513,6 +534,109 @@ function getLocationPath(info: InstallInfo, location: ModLocation) {
 async function readJsonFile(filePath: string) {
   const content = await fs.readFile(filePath, 'utf-8')
   return JSON.parse(content) as Record<string, unknown>
+}
+
+async function getWorldConfigPaths(userDataPath: string | null) {
+  if (!userDataPath) return []
+  const savesRoot = path.join(userDataPath, 'Saves')
+  if (!(await pathExists(savesRoot))) {
+    return []
+  }
+  const entries = await fs.readdir(savesRoot, { withFileTypes: true })
+  const configs: string[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const configPath = path.join(savesRoot, entry.name, 'config.json')
+    if (await pathExists(configPath)) {
+      configs.push(configPath)
+    }
+  }
+
+  return configs
+}
+
+async function getActiveWorldConfigPath(userDataPath: string | null) {
+  const configs = await getWorldConfigPaths(userDataPath)
+  let latest: { path: string; mtimeMs: number } | null = null
+
+  for (const configPath of configs) {
+    const stat = await fs.stat(configPath)
+    if (!latest || stat.mtimeMs > latest.mtimeMs) {
+      latest = { path: configPath, mtimeMs: stat.mtimeMs }
+    }
+  }
+
+  return latest?.path ?? null
+}
+
+function readWorldModOverridesFromConfig(config: Record<string, unknown>) {
+  const overrides = new Map<string, boolean>()
+  const modsValue = config.Mods
+  if (!modsValue || typeof modsValue !== 'object') {
+    return overrides
+  }
+
+  for (const [modId, value] of Object.entries(modsValue as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue
+    const enabledValue = (value as Record<string, unknown>).Enabled
+    if (typeof enabledValue === 'boolean') {
+      overrides.set(modId, enabledValue)
+    }
+  }
+
+  return overrides
+}
+
+async function readActiveWorldModOverrides(userDataPath: string | null) {
+  const configPath = await getActiveWorldConfigPath(userDataPath)
+  if (!configPath) return null
+  try {
+    const config = await readJsonFile(configPath)
+    return readWorldModOverridesFromConfig(config)
+  } catch {
+    return null
+  }
+}
+
+async function updateWorldModConfig(configPath: string, enabledSet: Set<string>, entries: ModEntry[]) {
+  let config: Record<string, unknown> = {}
+  try {
+    config = await readJsonFile(configPath)
+  } catch {
+    config = {}
+  }
+
+  const existingMods = config.Mods
+  const modsSection: Record<string, unknown> =
+    existingMods && typeof existingMods === 'object' ? { ...(existingMods as Record<string, unknown>) } : {}
+
+  for (const entry of entries) {
+    const existingEntry = modsSection[entry.id]
+    const nextEntry: Record<string, unknown> =
+      existingEntry && typeof existingEntry === 'object' ? { ...(existingEntry as Record<string, unknown>) } : {}
+    nextEntry.Enabled = enabledSet.has(entry.id)
+    modsSection[entry.id] = nextEntry
+  }
+
+  config.Mods = modsSection
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
+}
+
+async function syncActiveWorldModConfig(
+  userDataPath: string | null,
+  enabledSet: Set<string>,
+  entries: ModEntry[],
+  warnings: string[],
+) {
+  const configPath = await getActiveWorldConfigPath(userDataPath)
+  if (!configPath) return
+  try {
+    await updateWorldModConfig(configPath, enabledSet, entries)
+  } catch {
+    const worldName = path.basename(path.dirname(configPath))
+    warnings.push(`Failed to sync mod settings for world ${worldName}.`)
+  }
 }
 
 async function readManifestFromFolder(folderPath: string) {
@@ -590,21 +714,26 @@ const vanillaZipState: {
 }
 
 const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, label: string) => Record<string, unknown>> = {
-  item: (id, label) => ({
-    Id: id,
-    DisplayName: label,
+  item: (id, _label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Misc'],
     MaxStack: 64,
-    Categories: [],
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    Texture: `Items/${id}.png`,
+    Scale: 1.0,
   }),
-  block: (id, label) => ({
-    Id: id,
-    DisplayName: label,
-    Hardness: 1,
+  block: (id, _label) => ({
+    PlayerAnimationsId: 'Block',
+    Categories: ['Blocks.Building'],
+    MaxStack: 64,
+    BlockType: id,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Blocks/${id}.blockymodel`,
+    Texture: `Blocks/${id}.png`,
   }),
-  category: (id, label) => ({
-    Id: id,
-    Label: label,
-    Icon: '',
+  category: (id, _label) => ({
+    Icon: `Icons/${id}.png`,
     Order: 0,
     Children: [],
   }),
@@ -1656,6 +1785,7 @@ function createModEntry(params: {
   path: string
   hasClasses?: boolean
   enabledOverride?: boolean
+  enabledOverrides?: Map<string, boolean>
   warnings?: string[]
 }): ModEntry {
   const entryWarnings = [...(params.warnings ?? [])]
@@ -1693,13 +1823,16 @@ function createModEntry(params: {
     entryWarnings,
   )
   const includesAssetPack = includesAssetPackValue === true
+  const id = group ? `${group}:${name}` : name
+  const overrideValue = params.enabledOverrides?.get(id)
   const enabled =
     typeof params.enabledOverride === 'boolean'
       ? params.enabledOverride
-      : disabledByDefaultValue === true
-        ? false
-        : true
-  const id = group ? `${group}:${name}` : name
+      : typeof overrideValue === 'boolean'
+        ? overrideValue
+        : disabledByDefaultValue === true
+          ? false
+          : true
 
   return {
     id,
@@ -1731,7 +1864,12 @@ function appendEntryWarnings(entry: ModEntry, warnings: string[]) {
   }
 }
 
-async function scanPacksFolder(packsPath: string, warnings: string[], enabledOverride?: boolean) {
+async function scanPacksFolder(
+  packsPath: string,
+  warnings: string[],
+  enabledOverride?: boolean,
+  enabledOverrides?: Map<string, boolean>,
+) {
   const entries = await fs.readdir(packsPath, { withFileTypes: true })
   const mods: ModEntry[] = []
 
@@ -1760,6 +1898,7 @@ async function scanPacksFolder(packsPath: string, warnings: string[], enabledOve
       location: 'packs',
       path: fullPath,
       enabledOverride,
+      enabledOverrides,
       warnings: entryWarnings,
     })
 
@@ -1770,7 +1909,12 @@ async function scanPacksFolder(packsPath: string, warnings: string[], enabledOve
   return mods
 }
 
-async function scanModsFolder(modsPath: string, warnings: string[], enabledOverride?: boolean) {
+async function scanModsFolder(
+  modsPath: string,
+  warnings: string[],
+  enabledOverride?: boolean,
+  enabledOverrides?: Map<string, boolean>,
+) {
   const entries = await fs.readdir(modsPath, { withFileTypes: true })
   const mods: ModEntry[] = []
 
@@ -1800,6 +1944,7 @@ async function scanModsFolder(modsPath: string, warnings: string[], enabledOverr
         location: 'mods',
         path: fullPath,
         enabledOverride,
+        enabledOverrides,
         warnings: entryWarnings,
       })
 
@@ -1840,6 +1985,7 @@ async function scanModsFolder(modsPath: string, warnings: string[], enabledOverr
       path: fullPath,
       hasClasses,
       enabledOverride,
+      enabledOverrides,
       warnings: entryWarnings,
     })
 
@@ -1854,6 +2000,7 @@ async function scanEarlyPluginsFolder(
   earlyPluginsPath: string,
   warnings: string[],
   enabledOverride?: boolean,
+  enabledOverrides?: Map<string, boolean>,
 ) {
   const entries = await fs.readdir(earlyPluginsPath, { withFileTypes: true })
   const mods: ModEntry[] = []
@@ -1890,6 +2037,7 @@ async function scanEarlyPluginsFolder(
       path: fullPath,
       hasClasses,
       enabledOverride,
+      enabledOverrides,
       warnings: entryWarnings,
     })
 
@@ -1916,40 +2064,42 @@ async function scanMods(): Promise<ScanResult> {
     mods: path.join(disabledRoot, 'mods'),
     earlyplugins: path.join(disabledRoot, 'earlyplugins'),
   }
+  const worldOverrides = await readActiveWorldModOverrides(info.userDataPath)
 
   if (info.packsPath) {
-    entries.push(...(await scanPacksFolder(info.packsPath, warnings)))
+    entries.push(...(await scanPacksFolder(info.packsPath, warnings, undefined, worldOverrides ?? undefined)))
   } else {
     warnings.push('Packs folder not found.')
   }
 
   if (await pathExists(disabledPaths.packs)) {
-    entries.push(...(await scanPacksFolder(disabledPaths.packs, warnings, false)))
+    entries.push(...(await scanPacksFolder(disabledPaths.packs, warnings, false, worldOverrides ?? undefined)))
   }
 
   if (info.modsPath) {
-    entries.push(...(await scanModsFolder(info.modsPath, warnings)))
+    entries.push(...(await scanModsFolder(info.modsPath, warnings, undefined, worldOverrides ?? undefined)))
   } else {
     warnings.push('Mods folder not found.')
   }
 
   if (await pathExists(disabledPaths.mods)) {
-    entries.push(...(await scanModsFolder(disabledPaths.mods, warnings, false)))
+    entries.push(...(await scanModsFolder(disabledPaths.mods, warnings, false, worldOverrides ?? undefined)))
   }
 
   if (info.earlyPluginsPath) {
-    entries.push(...(await scanEarlyPluginsFolder(info.earlyPluginsPath, warnings)))
+    entries.push(...(await scanEarlyPluginsFolder(info.earlyPluginsPath, warnings, undefined, worldOverrides ?? undefined)))
   } else {
     warnings.push('Early plugins folder not found.')
   }
 
   if (await pathExists(disabledPaths.earlyplugins)) {
-    entries.push(...(await scanEarlyPluginsFolder(disabledPaths.earlyplugins, warnings, false)))
+    entries.push(...(await scanEarlyPluginsFolder(disabledPaths.earlyplugins, warnings, false, worldOverrides ?? undefined)))
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name))
 
   await seedProfilesFromScan(entries)
+  await syncDefaultProfileFromScan(entries)
 
   return { installPath: info.activePath, entries, warnings }
 }
@@ -2083,6 +2233,7 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
     }
   }
 
+  await syncActiveWorldModConfig(info.userDataPath, enabledSet, scan.entries, warnings)
   await writeSetting(SETTINGS_KEYS.lastSnapshot, snapshot.id)
 
   return {
@@ -2311,8 +2462,6 @@ async function exportModpack(options: ExportModpackOptions): Promise<ExportModpa
     name: profile.name,
     profileId: profile.id,
     enabledMods: profile.enabledMods,
-    loadOrder: profile.loadOrder,
-    notes: profile.notes,
     exportedAt: new Date().toISOString(),
     modCount: enabledMods.length,
   }
@@ -2367,8 +2516,6 @@ async function importModpack(): Promise<ImportModpackResult> {
   const modpackMeta = JSON.parse(modpackContent) as {
     name: string
     enabledMods: string[]
-    loadOrder: string[]
-    notes?: string
   }
 
   const warnings: string[] = []
@@ -2390,13 +2537,9 @@ async function importModpack(): Promise<ImportModpackResult> {
     return true
   })
 
-  const validLoadOrder = modpackMeta.loadOrder.filter((id) => knownModIds.has(id))
-
   await updateProfile({
     ...newProfile,
     enabledMods: validEnabledMods,
-    loadOrder: validLoadOrder,
-    notes: modpackMeta.notes,
   })
 
   return {

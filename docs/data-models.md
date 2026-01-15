@@ -32,6 +32,26 @@
 }
 ```
 
+## Plugin Mod Entry (with dependencies)
+```json
+{
+  "id": "Buuz135:AdvancedItemInfo",
+  "type": "plugin",
+  "path": "%AppData%/Hytale/UserData/Mods/AdvancedItemInfo-1.0.4.jar",
+  "name": "AdvancedItemInfo",
+  "group": "Buuz135",
+  "version": "1.0.4",
+  "description": "Adds a command to open a GUI with all the items in the game and their info",
+  "format": "jar",
+  "entryPoint": "com.buuz135.advancediteminfo.Main",
+  "includesAssetPack": true,
+  "enabled": true,
+  "dependencies": ["Hytale:EntityModule"],
+  "optionalDependencies": [],
+  "warnings": []
+}
+```
+
 ## Profile
 ```json
 {
@@ -72,4 +92,4 @@
 - `entryPoint` uses the plugin `Main` class (or null for pack-only).
 - `includesAssetPack` mirrors the manifest flag.
 - **ID format**: `Group:Name` when Group is present, otherwise just `Name`.
-- Dependencies can be an array `[]` or object `{}` in manifests.
+- **Manifest Dependencies/OptionalDependencies**: Use object format `{"ModId": "version"}` (e.g., `{"Hytale:EntityModule": "*"}`). The `*` means any version. Internally converted to string arrays of mod IDs.

@@ -188,8 +188,7 @@ export interface Profile {
   id: string
   name: string
   enabledMods: string[]
-  loadOrder: string[]
-  notes?: string
+  readonly?: boolean
 }
 
 export interface ProfilesState {
@@ -243,11 +242,13 @@ export interface PackManifest {
   Authors?: Array<{ Name: string; Email?: string; Url?: string }>
   Website?: string
   ServerVersion?: string
-  Dependencies?: string[]
-  OptionalDependencies?: string[]
+  Dependencies?: Record<string, string>
+  OptionalDependencies?: Record<string, string>
+  LoadBefore?: Record<string, string>
   DisabledByDefault?: boolean
   Main?: string
   IncludesAssetPack?: boolean
+  SubPlugins?: string[]
 }
 
 export interface CreatePackOptions {

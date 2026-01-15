@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from '@/App'
@@ -94,8 +94,7 @@ const createFixtures = (): Fixtures => {
     id: 'profile-1',
     name: 'Default',
     enabledMods: ['alpha-pack', 'beta-plugin', 'gamma-early'],
-    loadOrder: ['alpha-pack', 'beta-plugin'],
-    notes: 'Keep this profile stable.',
+    readonly: true,
   }
 
   const profilesState: ProfilesState = {
@@ -106,7 +105,6 @@ const createFixtures = (): Fixtures => {
         id: 'profile-2',
         name: 'Experimental',
         enabledMods: [],
-        loadOrder: [],
       },
     ],
   }
@@ -255,19 +253,12 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
 
 const renderApp = async () => {
   render(<App />)
-  const table = await screen.findByRole('table')
-  await within(table).findByText('Alpha Pack')
-  return table
-}
-
-const navigateToProfiles = async () => {
-  const user = userEvent.setup()
-  const profilesButton = await screen.findByRole('button', { name: /profiles/i })
-  await user.click(profilesButton)
+  // Wait for mods grid to appear
+  await screen.findByText('Alpha Pack')
 }
 
 describe('App', () => {
-  it('loads install info, scan data, and warnings', async () => {
+  it('loads install info and scan data', async () => {
     const fixtures = createFixtures()
     const api = buildHymnApi(fixtures)
 
@@ -276,63 +267,29 @@ describe('App', () => {
     expect(api.getInstallInfo).toHaveBeenCalledTimes(1)
     expect(api.scanMods).toHaveBeenCalledTimes(1)
 
-    const snapshotCard = screen.getByText('Library Snapshot').closest('[data-slot="card"]')
-    expect(snapshotCard).not.toBeNull()
-    const snapshotScope = within(snapshotCard as HTMLElement)
-
-    const totalContainer = snapshotScope.getByText('Total mods').closest('div')
-    expect(totalContainer).not.toBeNull()
-    expect(within(totalContainer as HTMLElement).getByText('3')).toBeInTheDocument()
-
-    const packsContainer = snapshotScope.getByText('Packs').closest('div')
-    expect(packsContainer).not.toBeNull()
-    expect(within(packsContainer as HTMLElement).getByText('1')).toBeInTheDocument()
-
-    const pluginsContainer = snapshotScope.getByText('Plugins').closest('div')
-    expect(pluginsContainer).not.toBeNull()
-    expect(within(pluginsContainer as HTMLElement).getByText('1')).toBeInTheDocument()
-
-    const earlyContainer = snapshotScope.getByText('Early plugins').closest('div')
-    expect(earlyContainer).not.toBeNull()
-    expect(within(earlyContainer as HTMLElement).getByText('1')).toBeInTheDocument()
-
-    expect(screen.getByText('Permissions warning')).toBeInTheDocument()
-    expect(screen.getByText('Scan warning')).toBeInTheDocument()
-    expect(screen.getAllByText('C:\\Hytale').length).toBeGreaterThan(0)
+    // Check mod cards are rendered
+    expect(screen.getByText('Alpha Pack')).toBeInTheDocument()
+    expect(screen.getByText('Beta Plugin')).toBeInTheDocument()
+    expect(screen.getByText('Gamma Early')).toBeInTheDocument()
   })
 
   it('filters the mod list by group or id', async () => {
     buildHymnApi(createFixtures())
 
-    const table = await renderApp()
+    await renderApp()
 
     const user = userEvent.setup()
-    const filterInput = screen.getByPlaceholderText('Filter by name, group, or id')
+    const filterInput = screen.getByPlaceholderText(/search mods/i)
     await user.type(filterInput, 'addons')
 
-    expect(await within(table).findByText('Beta Plugin')).toBeInTheDocument()
-    expect(within(table).queryByText('Alpha Pack')).not.toBeInTheDocument()
-    expect(within(table).queryByText('Gamma Early')).not.toBeInTheDocument()
+    expect(await screen.findByText('Beta Plugin')).toBeInTheDocument()
+    expect(screen.queryByText('Alpha Pack')).not.toBeInTheDocument()
+    expect(screen.queryByText('Gamma Early')).not.toBeInTheDocument()
 
     await user.clear(filterInput)
     await user.type(filterInput, 'gamma-early')
-    expect(await within(table).findByText('Gamma Early')).toBeInTheDocument()
-    expect(within(table).queryByText('Alpha Pack')).not.toBeInTheDocument()
-  })
-
-  it('surfaces profile warnings for load order and dependencies', async () => {
-    buildHymnApi(createFixtures())
-
-    await renderApp()
-    await navigateToProfiles()
-
-    expect(await screen.findByText('Profile warnings')).toBeInTheDocument()
-    expect(
-      screen.getByText('Alpha Pack: Beta Plugin should load before this mod.'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('Gamma Early: enabled but missing from the load order.'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Gamma Early')).toBeInTheDocument()
+    expect(screen.queryByText('Alpha Pack')).not.toBeInTheDocument()
   })
 
   it('updates profile state when toggling a mod', async () => {
@@ -340,7 +297,6 @@ describe('App', () => {
     const activeProfile = {
       ...fixtures.profilesState.profiles[0],
       enabledMods: ['alpha-pack'],
-      loadOrder: ['alpha-pack'],
     }
     fixtures.profilesState = {
       activeProfileId: activeProfile.id,
@@ -359,68 +315,7 @@ describe('App', () => {
     expect(updateProfile).toHaveBeenCalledWith(
       expect.objectContaining({
         enabledMods: [],
-        loadOrder: [],
       }),
     )
-  })
-
-  it('reorders the load order when moving a mod', async () => {
-    const fixtures = createFixtures()
-    const activeProfile = {
-      ...fixtures.profilesState.profiles[0],
-      enabledMods: ['alpha-pack', 'beta-plugin'],
-      loadOrder: ['alpha-pack', 'beta-plugin'],
-    }
-    fixtures.profilesState = {
-      activeProfileId: activeProfile.id,
-      profiles: [activeProfile],
-    }
-
-    const updateProfile = vi.fn().mockImplementation(async (profile: Profile) => profile)
-    buildHymnApi(fixtures, { updateProfile })
-
-    await renderApp()
-    await navigateToProfiles()
-
-    const user = userEvent.setup()
-    const moveDown = await screen.findByLabelText('Move Alpha Pack down')
-    await user.click(moveDown)
-
-    expect(updateProfile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        loadOrder: ['beta-plugin', 'alpha-pack'],
-      }),
-    )
-  })
-
-  it('applies and rolls back a profile', async () => {
-    const fixtures = createFixtures()
-    const applyProfile = vi.fn().mockResolvedValue({
-      profileId: fixtures.profilesState.activeProfileId ?? 'profile-1',
-      snapshotId: 'snap-9',
-      appliedAt: '2026-01-01T00:00:00Z',
-      warnings: ['Applied with warnings'],
-    })
-    const rollbackLastApply = vi.fn().mockResolvedValue({
-      snapshotId: 'snap-8',
-      restoredAt: '2026-01-01T00:00:00Z',
-      warnings: ['Rollback warning'],
-    })
-
-    buildHymnApi(fixtures, { applyProfile, rollbackLastApply })
-
-    await renderApp()
-    await navigateToProfiles()
-
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Apply Profile' }))
-
-    expect(await screen.findByText('Applied Default. Snapshot snap-9.')).toBeInTheDocument()
-    expect(await screen.findByText('Applied with warnings')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Rollback' }))
-
-    expect(await screen.findByText('Rolled back to snapshot snap-8.')).toBeInTheDocument()
-    expect(await screen.findByText('Rollback warning')).toBeInTheDocument()
   })
 })

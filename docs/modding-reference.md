@@ -25,34 +25,121 @@ This summary merges the official CurseForge guides you supplied with additional 
 - Pack-only mods: `Common/` + `Server/` (no Java classes).
 - Plugin mods: Java classes + `manifest.json`, sometimes with `Common/` assets (`IncludesAssetPack`).
 
-### Example Manifests (Local)
-- **Pack-only** (Macaw’s Hy Paintings)
-  - `Group`: `SketchMacaw`
-  - `Name`: `Macaw's Hy Paintings`
-  - `Version`: `1.0.0`
-  - No `Main` or `IncludesAssetPack` fields
-- **Pack-only** (Violet’s Furnishings)
-  - `Group`: `Violet`
-  - `Name`: `Violet's Furnishings`
-  - `Version`: `0.1`
-  - No `Main` or `IncludesAssetPack` fields
-- **Plugin + assets** (Ymmersive Statues)
-  - `Group`: `Conczin`
-  - `Name`: `Ymmersive Statues`
-  - `Version`: `1.0.1`
-  - `Main`: `net.conczin.YmmersiveStatues`
-  - `IncludesAssetPack`: `true`
+### Example Manifests (from real mods)
+
+**Pack-only mod** (NoCube's Bags - .zip):
+```json
+{
+  "Group": "NoCube",
+  "Name": "[NoCube's] Simple Bags",
+  "Version": "0.0.2",
+  "Description": "Adds bags to carry more items",
+  "Authors": [
+    { "Name": "NoCube", "Url": "https://www.curseforge.com/members/nocubeyt/projects" }
+  ],
+  "Website": "https://curseforge.com/hytale/mods/nocubes-bags",
+  "ServerVersion": "*",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "DisabledByDefault": false
+}
+```
+
+**Plugin mod with dependencies** (AdvancedItemInfo - .jar):
+```json
+{
+  "Group": "Buuz135",
+  "Name": "AdvancedItemInfo",
+  "Version": "1.0.4",
+  "Description": "Adds a command to open a GUI with all the items in the game and their info",
+  "Authors": [{ "Name": "Buuz135" }],
+  "Website": "website",
+  "ServerVersion": "*",
+  "Dependencies": {
+    "Hytale:EntityModule": "*"
+  },
+  "OptionalDependencies": {},
+  "DisabledByDefault": false,
+  "Main": "com.buuz135.advancediteminfo.Main",
+  "IncludesAssetPack": true
+}
+```
+
+**Plugin mod with multiple dependencies** (EyeSpy - .jar):
+```json
+{
+  "Group": "JarHax",
+  "Name": "EyeSpy",
+  "Version": "2026.1.14-55560",
+  "Authors": [
+    { "Name": "Jaredlll08", "Url": "https://blamejared.com" },
+    { "Name": "Darkhax", "Url": "https://darkhax.net" }
+  ],
+  "Website": "https://www.curseforge.com/hytale/mods/eyespy",
+  "ServerVersion": "*",
+  "Dependencies": {
+    "Hytale:EntityModule": "*",
+    "Hytale:AssetModule": "*"
+  },
+  "OptionalDependencies": {},
+  "DisabledByDefault": false,
+  "Main": "com.jarhax.eyespy.EyeSpy",
+  "IncludesAssetPack": true
+}
+```
 
 ## Packs: Getting Started
 1. Create folder: `UserData/Packs/YourPackName`.
 2. Create `manifest.json` with core fields:
    - `Group`, `Name`, `Version`, `Description`
-   - `Authors` (Name, Email, Url)
-   - `Website`, `ServerVersion`, `Dependencies`, `OptionalDependencies`
+   - `Authors` (array of `{Name, Email?, Url?}` objects)
+   - `Website`, `ServerVersion`
+   - `Dependencies`, `OptionalDependencies` (object format: `{"ModId": "version"}`)
    - `DisabledByDefault` (boolean)
 3. Create **Common** and **Server** folders:
-   - `Common` for models/textures
-   - `Server` for items/blocks/translations/particles
+   - `Common` for models/textures/UI/particles/animations
+   - `Server` for items/blocks/translations/audio/entities
+
+### Server Folder Structure (observed from real mods)
+```
+Server/
+├── Audio/
+│   └── SoundEvents/SFX/          # Sound event definitions
+├── Entity/
+│   └── Effects/                   # Entity effect definitions
+├── Item/
+│   ├── Animations/               # Item animation definitions
+│   ├── Block/
+│   │   ├── Blocks/               # Block definitions
+│   │   └── Hitboxes/             # Hitbox definitions
+│   ├── Category/CreativeLibrary/ # Item categories
+│   ├── Groups/                   # Item groups (for variants)
+│   ├── Interactions/             # Item interactions
+│   └── Items/                    # Item definitions
+├── Languages/
+│   └── en-US/                    # Translations (.lang files)
+│       ├── server.lang           # Core translations
+│       ├── items.lang            # Item name translations
+│       └── ...
+└── NPC/
+    └── Roles/                    # NPC role definitions
+```
+
+### Common Folder Structure (observed from real mods)
+```
+Common/
+├── Blocks/                       # Block models and textures
+├── BlockTextures/                # Block textures
+├── Characters/
+│   └── Animations/Items/         # Character item animations
+├── Icons/ItemsGenerated/         # Generated item icons
+├── Items/                        # Item models and textures
+├── Models/                       # General models
+├── Particles/Textures/           # Particle textures
+├── ScreenEffects/                # Screen effect textures
+└── UI/                           # Custom UI elements
+    └── Custom/Pages/             # Custom UI pages (.ui files)
+```
 
 ### Adding a Block (Summary)
 - Create JSON in `Server/Item/Items/your_block.json`.
@@ -113,9 +200,10 @@ HytaleDocs uses a `mods/<pack>/data` and `mods/<pack>/assets` structure, while t
 
 ### Manifest.json (Key Fields)
 - **Required**: `Name`
-- **Common**: `Group`, `Version`, `Description`, `Main`, `Authors`, `ServerVersion`
-- **Dependencies**: `Dependencies`, `OptionalDependencies`, `LoadBefore`
+- **Common**: `Group`, `Version`, `Description`, `Main`, `Authors`, `ServerVersion`, `Website`
+- **Dependencies**: `Dependencies`, `OptionalDependencies`, `LoadBefore` — all use **object format**: `{"ModId": "version"}` where `"*"` means any version (e.g., `"Dependencies": {"Hytale:EntityModule": "*"}`)
 - **Flags**: `DisabledByDefault`, `IncludesAssetPack`
+- **Advanced**: `SubPlugins` (array of sub-plugin identifiers)
 
 ### Registries (Examples)
 Plugins can register commands, events, assets, block states, entities, tasks, and more.
