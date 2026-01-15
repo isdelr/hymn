@@ -6,7 +6,9 @@
       "Bash(cat:*)",
       "Bash(npm test)",
       "Bash(unzip:*)",
-      "Bash(jar tf:*)"
+      "Bash(jar tf:*)",
+      "Bash(bun run build)",
+      "Bash(npm run build:*)"
     ]
   }
 }

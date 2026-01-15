@@ -1,60 +1,29 @@
 import { useMemo, useState } from 'react'
-import { Activity, LayoutGrid, Settings, Sparkles, Users } from 'lucide-react'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarSeparator,
-  SidebarTrigger,
-} from '@/components/ui/sidebar'
+import { Boxes, Settings, Sparkles } from 'lucide-react'
 import { AppProvider, useAppContext } from '@/context/AppContext'
-import {
-  LibrarySection,
-  ProfilesSection,
-  CreateSection,
-  DiagnosticsSection,
-  SettingsSection,
-} from '@/components/sections'
+import { ModsSection } from '@/components/sections/ModsSection'
+import { CreateSection } from '@/components/sections/CreateSection'
+import { SettingsSection } from '@/components/sections/SettingsSection'
+import { WelcomeScreen } from '@/components/WelcomeScreen'
+import { cn } from '@/lib/utils'
 
 const sections = [
   {
-    id: 'library',
-    label: 'Library',
-    description: 'Scan mods and review metadata.',
-    icon: LayoutGrid,
-  },
-  {
-    id: 'profiles',
-    label: 'Profiles',
-    description: 'Curate mod sets and load order.',
-    icon: Users,
+    id: 'mods',
+    label: 'Mods',
+    description: 'Manage your mods and profiles',
+    icon: Boxes,
   },
   {
     id: 'create',
     label: 'Create',
-    description: 'Scaffold packs and manifests.',
+    description: 'Build new packs and plugins',
     icon: Sparkles,
-  },
-  {
-    id: 'diagnostics',
-    label: 'Diagnostics',
-    description: 'Check warnings and install health.',
-    icon: Activity,
   },
   {
     id: 'settings',
     label: 'Settings',
-    description: 'Manage paths and preferences.',
+    description: 'Configure paths and preferences',
     icon: Settings,
   },
 ] as const
@@ -62,95 +31,119 @@ const sections = [
 type AppSection = (typeof sections)[number]['id']
 
 function AppContent() {
-  const { state } = useAppContext()
-  const { installInfo } = state
-  const [activeSection, setActiveSection] = useState<AppSection>('library')
+  const { state, counts } = useAppContext()
+  const { installInfo, profilesState } = state
+  const [activeSection, setActiveSection] = useState<AppSection>('mods')
 
   const activeSectionMeta = useMemo(() => {
     return sections.find((section) => section.id === activeSection) ?? sections[0]
   }, [activeSection])
 
+  // Show welcome screen if no install path is configured
+  const showWelcome = !installInfo?.activePath
+
   const sectionContent = (() => {
+    if (showWelcome) {
+      return <WelcomeScreen />
+    }
     switch (activeSection) {
-      case 'profiles':
-        return <ProfilesSection />
       case 'create':
         return <CreateSection />
-      case 'diagnostics':
-        return <DiagnosticsSection />
       case 'settings':
         return <SettingsSection />
       default:
-        return <LibrarySection />
+        return <ModsSection />
     }
   })()
 
   return (
-    <SidebarProvider className="bg-background text-foreground">
-      <Sidebar variant="inset" collapsible="icon">
-        <SidebarHeader className="pt-3">
-          <div className="flex items-center gap-3 px-2">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-semibold">
-              H
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold">Hymn</span>
-              <span className="text-xs text-sidebar-foreground/70">Mod Manager</span>
-            </div>
-          </div>
-        </SidebarHeader>
-        <SidebarSeparator />
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {sections.map((section) => {
-                  const Icon = section.icon
-                  return (
-                    <SidebarMenuItem key={section.id}>
-                      <SidebarMenuButton
-                        isActive={activeSection === section.id}
-                        onClick={() => setActiveSection(section.id)}
-                        tooltip={section.label}
-                      >
-                        <Icon />
-                        <span>{section.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarSeparator />
-        <SidebarFooter className="group-data-[collapsible=icon]:hidden">
-          <div className="rounded-lg bg-sidebar-accent/40 p-2 text-xs text-sidebar-foreground/70">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-sidebar-foreground/60">Install</p>
-            <p className="mt-1 truncate text-xs text-sidebar-foreground">
-              {installInfo?.activePath ?? 'Not configured'}
-            </p>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
-      <SidebarRail />
-      <SidebarInset>
-        <div className="flex items-center gap-3 border-b border-border/60 px-6 py-4">
-          <SidebarTrigger />
-          <div className="flex flex-col">
-            <span className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Hymn</span>
-            <span className="text-sm font-medium">{activeSectionMeta.label}</span>
-          </div>
-          <span className="ml-auto hidden text-xs text-muted-foreground lg:block">
-            {activeSectionMeta.description}
-          </span>
+    <div className="flex h-screen bg-background text-foreground">
+      {/* Sidebar Navigation */}
+      <aside className="flex w-16 flex-col items-center border-r border-border/50 bg-sidebar py-4">
+        {/* Logo */}
+        <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-lg glow-primary">
+          H
         </div>
-        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-          {sectionContent}
+
+        {/* Navigation Items */}
+        <nav className="flex flex-1 flex-col items-center gap-2">
+          {sections.map((section) => {
+            const Icon = section.icon
+            const isActive = activeSection === section.id
+            return (
+              <button
+                key={section.id}
+                onClick={() => setActiveSection(section.id)}
+                disabled={showWelcome && section.id !== 'settings'}
+                className={cn(
+                  'group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200',
+                  isActive
+                    ? 'bg-primary text-primary-foreground shadow-lg'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  showWelcome && section.id !== 'settings' && 'opacity-40 cursor-not-allowed'
+                )}
+                title={section.label}
+              >
+                <Icon className="h-5 w-5" />
+                {/* Tooltip */}
+                <span className="absolute left-full ml-3 hidden whitespace-nowrap rounded-lg bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-lg group-hover:block">
+                  {section.label}
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Status indicator */}
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <div
+            className={cn(
+              'h-2 w-2 rounded-full',
+              installInfo?.activePath ? 'bg-success animate-pulse-glow' : 'bg-destructive'
+            )}
+            title={installInfo?.activePath ? 'Connected' : 'No install detected'}
+          />
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex flex-1 flex-col overflow-hidden">
+        {/* Header */}
+        {!showWelcome && (
+          <header className="flex items-center justify-between border-b border-border/50 px-8 py-4">
+            <div>
+              <h1 className="text-xl font-semibold">{activeSectionMeta.label}</h1>
+              <p className="text-sm text-muted-foreground">{activeSectionMeta.description}</p>
+            </div>
+            <div className="flex items-center gap-4">
+              {activeSection === 'mods' && (
+                <div className="flex items-center gap-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Mods:</span>
+                    <span className="font-medium">{counts.total}</span>
+                  </div>
+                  <div className="h-4 w-px bg-border" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Profiles:</span>
+                    <span className="font-medium">{profilesState?.profiles.length ?? 0}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </header>
+        )}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto">
+          <div className={cn(
+            'mx-auto w-full px-8 py-6',
+            showWelcome ? 'max-w-3xl' : 'max-w-7xl'
+          )}>
+            {sectionContent}
+          </div>
+        </div>
+      </main>
+    </div>
   )
 }
 

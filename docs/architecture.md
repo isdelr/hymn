@@ -40,12 +40,35 @@ Hymn is an Electron app with a secure main/renderer split. The main process owns
   - Java plugin class `net.conczin.YmmersiveStatues` with `IncludesAssetPack: true`.
   - Has `Common/` and `Server/` assets plus Java classes.
 
-## Renderer Modules
-- **Library**: list/grid views + details panel.
-- **Profiles**: toggleable profiles with diff preview.
-- **Create**: pack wizard, file tree, JSON editor.
-- **Diagnostics**: logs, warnings, file health.
-- **Settings**: paths, backup strategy, advanced toggles.
+## Renderer Modules (UI Sections)
+
+The UI uses a **3-section navigation** for simplicity:
+
+- **Mods** (unified view)
+  - Combines former Library and Profiles views
+  - Card-based mod grid with search/filter
+  - Profile sidebar with load order management
+  - Drag-and-drop load order reordering
+  - Apply/Rollback with confirmation dialogs
+
+- **Create** (tabbed interface)
+  - Pack wizard with manifest generation
+  - Manifest JSON editor with validation
+  - Asset browser with previews
+  - Server data management (items, blocks)
+  - Gradle build runner
+
+- **Settings** (combined configuration)
+  - Install path configuration
+  - Import/Export modpacks
+  - Diagnostics panel (formerly separate section)
+  - Backup management
+  - About information
+
+### Welcome Screen
+- Shown when no install path is configured
+- Guides new users through initial setup
+- Feature highlights and single CTA
 
 ## Data Flow (Happy Path)
 1. Resolve install path.

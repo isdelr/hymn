@@ -1,5 +1,8 @@
+export { ModsSection } from './ModsSection'
+export { CreateSection } from './CreateSection'
+export { SettingsSection } from './SettingsSection'
+
+// Legacy exports for backwards compatibility
 export { LibrarySection } from './LibrarySection'
 export { ProfilesSection } from './ProfilesSection'
-export { CreateSection } from './CreateSection'
 export { DiagnosticsSection } from './DiagnosticsSection'
-export { SettingsSection } from './SettingsSection'
