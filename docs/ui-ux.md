@@ -75,22 +75,28 @@ A minimal 64px sidebar with:
 - Profile switching via button group
 - Apply/Rollback with confirmation dialogs
 
-#### 2. Create
+#### 2. Create (Playground)
 
-**Purpose**: Mod creation and editing tools.
+**Purpose**: A full-featured IDE for visual mod creation.
 
-**Layout**: Tabbed interface
-- New Pack wizard
-- Manifest editor
-- Asset browser
-- Server data management
-- Build runner
+**View 1: Projects Dashboard**
+- Grid of local mod projects (Pack/Plugin)
+- "New Project" wizard modal
+- Quick actions: Build, Open Folder
+
+**View 2: Editor Workspace (The Playground)**
+**Layout**: 3-Panel IDE
+- **Left (Explorer)**: File tree (manifest, Server/, Common/) with context menus
+- **Center (Canvas)**: 
+  - **Visual Form Editor**: For JSON assets (Items, Blocks)
+  - **Code Editor**: Monaco-like fallback for raw JSON
+  - **Previewer**: For textures/models
+- **Top (Toolbar)**: Breadcrumbs, Build button, View toggles
 
 **Key Features**:
-- Step-by-step pack creation
-- Live JSON validation
-- Asset preview grid
-- Gradle build output
+- "Playground" feel with instant visual feedback
+- Schema-driven forms (no manual JSON typing for basics)
+- Drag-and-drop asset assignment
 
 #### 3. Settings
 

@@ -85,6 +85,19 @@
 }
 ```
 
+## World Config (Per-World Mod State)
+Located at `Saves/{WorldName}/config.json`:
+```json
+{
+  "Mods": {
+    "Buuz135:AdminUI": { "Enabled": true },
+    "NoCube:[NoCube's] Simple Bags": { "Enabled": false }
+  }
+}
+```
+
+**Important**: Mods are **disabled by default** unless explicitly enabled in the world config.
+
 ## Notes
 - **Type values**: `pack`, `plugin`, `early-plugin`, `unknown`.
 - **Format values**: `directory`, `zip`, `jar`.
@@ -93,3 +106,9 @@
 - `includesAssetPack` mirrors the manifest flag.
 - **ID format**: `Group:Name` when Group is present, otherwise just `Name`.
 - **Manifest Dependencies/OptionalDependencies**: Use object format `{"ModId": "version"}` (e.g., `{"Hytale:EntityModule": "*"}`). The `*` means any version. Internally converted to string arrays of mod IDs.
+
+## Known Hytale Modules (Dependency Targets)
+Plugins can depend on built-in Hytale modules:
+- `Hytale:EntityModule` - Entity management and interactions
+- `Hytale:AssetModule` - Asset loading and registration
+- `Hytale:AccessControlModule` - Permission and admin control system

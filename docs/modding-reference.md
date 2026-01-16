@@ -1,33 +1,32 @@
-# Hytale Modding Reference (Summary)
+# Hytale Modding Reference (Verified)
 
-This summary merges the official CurseForge guides you supplied with additional HytaleDocs references. It preserves key details while keeping the text scannable.
+This document is based on direct examination of real Hytale mods, the game's Assets.zip, and official documentation. Last verified: January 2026.
 
 ## Modding Philosophy (Server-First)
-- **One community, one client**: players never install a modded client.
+
+- **One community, one client**: Players never need to install a modded client.
 - **Server streams content** to clients; even single-player runs a local server.
-- **Benefits**: instant updates, no modpack friction, improved security.
+- **Benefits**: Instant updates, no modpack friction, improved security.
 
 ## Mod Types
-- **Packs (Data Assets)**: JSON-based assets for blocks/items/NPCs; edited via Asset Editor.
-- **Plugins (Java)**: `.jar` mods built with Java 25 + Gradle 9.2.0.
-- **Bootstrap/Early Plugins**: low-level bytecode transformers loaded before the server.
-- **Visual Scripting**: node-based system (coming soon).
 
-## Default Locations (Windows)
-- Root: `%AppData%\Hytale`
-- Packs: `...\UserData\Packs\YourPackName`
-- Plugins (mods): `...\\UserData\\Mods` (observed `.jar` + `.zip` mods)
-- Early plugins: `...\earlyplugins` (create manually or use `--early-plugins`)
-- Dedicated server layout: `/hytale-server/mods`, `/plugins`, `/config`, `/worlds`
+Hytale supports three distinct mod types with different capabilities and installation locations:
 
-## Observed Packaging (Local Install)
-- Mods in `UserData/Mods` commonly ship as **archives** with `manifest.json` at root.
-- Pack-only mods: `Common/` + `Server/` (no Java classes).
-- Plugin mods: Java classes + `manifest.json`, sometimes with `Common/` assets (`IncludesAssetPack`).
+### 1. Packs (Asset/Data Mods)
 
-### Example Manifests (from real mods)
+**Purpose**: Add or modify game content (blocks, items, NPCs, UI) using JSON data files and art assets. No coding required.
 
-**Pack-only mod** (NoCube's Bags - .zip):
+**Characteristics**:
+- File formats: `.zip` archives or uncompressed folders
+- Contains `Common/` and/or `Server/` directories
+- Manifest has NO `Main` field
+- Can be edited with Hytale's built-in Asset Editor
+
+**Installation Location**:
+- Primary: `%AppData%\Hytale\UserData\Mods\` (as .zip or folder)
+- Legacy: `%AppData%\Hytale\UserData\Packs\` (folders only)
+
+**Example Manifest** (NoCube's Bags - pack-only):
 ```json
 {
   "Group": "NoCube",
@@ -45,204 +44,266 @@ This summary merges the official CurseForge guides you supplied with additional 
 }
 ```
 
-**Plugin mod with dependencies** (AdvancedItemInfo - .jar):
+### 2. Plugins (Java Mods)
+
+**Purpose**: Extend game functionality using Java code and the Hytale Server API. Can include asset packs.
+
+**Characteristics**:
+- File format: `.jar` archives (compiled Java)
+- Contains Java classes in package structure (e.g., `com/author/modname/`)
+- Manifest HAS a `Main` field pointing to the entry class
+- May include `IncludesAssetPack: true` if bundled with assets
+
+**Installation Location**: `%AppData%\Hytale\UserData\Mods\`
+
+**Requirements**: Java 25, Gradle 9.2.0 for development
+
+**Example Manifest** (AdminUI - plugin with assets):
 ```json
 {
   "Group": "Buuz135",
-  "Name": "AdvancedItemInfo",
-  "Version": "1.0.4",
-  "Description": "Adds a command to open a GUI with all the items in the game and their info",
+  "Name": "AdminUI",
+  "Version": "1.0.3",
+  "Description": "Adds multiple admin ui pages to the game.",
   "Authors": [{ "Name": "Buuz135" }],
-  "Website": "website",
+  "Website": "https://buuz135.com",
   "ServerVersion": "*",
   "Dependencies": {
-    "Hytale:EntityModule": "*"
+    "Hytale:AccessControlModule": "*"
   },
   "OptionalDependencies": {},
   "DisabledByDefault": false,
-  "Main": "com.buuz135.advancediteminfo.Main",
+  "Main": "com.buuz135.adminui.AdminUI",
   "IncludesAssetPack": true
 }
 ```
 
-**Plugin mod with multiple dependencies** (EyeSpy - .jar):
+### 3. Early Plugins (Bootstrap/Class Transformers)
+
+**Purpose**: Low-level modifications that run before the server starts. Used for bytecode transformation and core system modifications.
+
+**Characteristics**:
+- File format: `.jar` archives
+- Must implement `com.hypixel.hytale.plugin.early.ClassTransformer`
+- Registered via `META-INF/services/com.hypixel.hytale.plugin.early.ClassTransformer`
+- NO standard API access during transformation phase
+- Requires user acceptance (`--accept-early-plugins` flag)
+
+**Installation Location**: System-specific early plugins folder
+
+**Restrictions**:
+- Cannot modify restricted packages: `java`, `javax`, `io.netty`, `org.objectweb.asm`, `com.google.gson`
+- Users see a startup warning before loading
+
+**When to Use**: Only when absolutely necessary for features that cannot be achieved through standard plugins or packs.
+
+## Manifest Schema (Complete)
+
+All mods use `manifest.json` at the archive/folder root:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `Name` | string | **Yes** | Display name of the mod |
+| `Group` | string | No | Author/organization identifier |
+| `Version` | string | No | Semantic version (e.g., "1.0.0") |
+| `Description` | string | No | Brief description shown in mod lists |
+| `Authors` | array | No | Array of author objects |
+| `Website` | string | No | URL to mod homepage or documentation |
+| `ServerVersion` | string | No | Compatible server version (`"*"` = any) |
+| `Dependencies` | object | No | Required mods: `{"ModId": "version"}` |
+| `OptionalDependencies` | object | No | Optional mods: `{"ModId": "version"}` |
+| `LoadBefore` | object | No | Mods that should load after this one |
+| `DisabledByDefault` | boolean | No | If true, mod starts disabled |
+| `Main` | string | Plugins | Entry point class (e.g., `"com.author.MyPlugin"`) |
+| `IncludesAssetPack` | boolean | No | True if plugin includes `Common/`/`Server/` assets |
+| `SubPlugins` | array | No | Array of sub-plugin identifiers |
+
+### Author Object Format
 ```json
 {
-  "Group": "JarHax",
-  "Name": "EyeSpy",
-  "Version": "2026.1.14-55560",
-  "Authors": [
-    { "Name": "Jaredlll08", "Url": "https://blamejared.com" },
-    { "Name": "Darkhax", "Url": "https://darkhax.net" }
-  ],
-  "Website": "https://www.curseforge.com/hytale/mods/eyespy",
-  "ServerVersion": "*",
-  "Dependencies": {
-    "Hytale:EntityModule": "*",
-    "Hytale:AssetModule": "*"
-  },
-  "OptionalDependencies": {},
-  "DisabledByDefault": false,
-  "Main": "com.jarhax.eyespy.EyeSpy",
-  "IncludesAssetPack": true
+  "Name": "AuthorName",
+  "Email": "optional@email.com",
+  "Url": "https://optional-website.com"
 }
 ```
 
-## Packs: Getting Started
-1. Create folder: `UserData/Packs/YourPackName`.
-2. Create `manifest.json` with core fields:
-   - `Group`, `Name`, `Version`, `Description`
-   - `Authors` (array of `{Name, Email?, Url?}` objects)
-   - `Website`, `ServerVersion`
-   - `Dependencies`, `OptionalDependencies` (object format: `{"ModId": "version"}`)
-   - `DisabledByDefault` (boolean)
-3. Create **Common** and **Server** folders:
-   - `Common` for models/textures/UI/particles/animations
-   - `Server` for items/blocks/translations/audio/entities
+### Dependency Version Format
+- `"*"` - Any version
+- `"1.0.0"` - Exact version
+- `">=1.0.0"` - Minimum version
 
-### Server Folder Structure (observed from real mods)
+## Asset Structure
+
+### Common/ (Client-Side Assets)
+
+Assets that clients download and render locally.
+
+```
+Common/
+├── Blocks/                    # Block models (.blockymodel) and textures
+├── BlockTextures/             # Block texture files (.png)
+├── Characters/
+│   └── Animations/Items/      # Character item animations
+├── Cosmetics/
+│   └── CharacterCreator/      # Character customization assets
+├── Icons/
+│   └── ItemsGenerated/        # Auto-generated item icons
+├── Items/                     # Item models and textures
+├── Languages/                 # Client-side translations
+├── Models/                    # General 3D models
+├── Music/                     # Background music
+├── NPC/                       # NPC visual assets
+├── NotificationIcons/         # UI notification icons
+├── Particles/
+│   └── Textures/              # Particle effect textures
+├── Resources/                 # Miscellaneous resources
+├── ScreenEffects/             # Full-screen effect textures
+├── Sky/                       # Skybox textures
+├── Sounds/                    # Sound effects
+├── TintGradients/             # Color gradient maps
+├── Trails/                    # Trail effect assets
+├── UI/
+│   └── Custom/
+│       └── Pages/             # Custom UI definitions (.ui files)
+└── VFX/                       # Visual effects
+```
+
+### Server/ (Server-Side Data)
+
+Game logic and configuration processed by the server.
+
 ```
 Server/
 ├── Audio/
-│   └── SoundEvents/SFX/          # Sound event definitions
+│   └── SoundEvents/SFX/       # Sound event definitions
+├── BarterShops/               # NPC shop configurations
+├── BlockTypeList/             # Block type definitions
+├── Camera/                    # Camera configurations
+├── Drops/                     # Loot table definitions
 ├── Entity/
-│   └── Effects/                   # Entity effect definitions
+│   └── Effects/               # Entity effect definitions
+├── Environments/              # Environment configurations
+├── Farming/                   # Farming system data
+├── GameplayConfigs/           # Game rule configurations
+├── HytaleGenerator/           # World generation configs
+├── Instances/                 # Instance definitions
 ├── Item/
-│   ├── Animations/               # Item animation definitions
+│   ├── Animations/            # Item animation definitions
 │   ├── Block/
-│   │   ├── Blocks/               # Block definitions
-│   │   └── Hitboxes/             # Hitbox definitions
-│   ├── Category/CreativeLibrary/ # Item categories
-│   ├── Groups/                   # Item groups (for variants)
-│   ├── Interactions/             # Item interactions
-│   └── Items/                    # Item definitions
+│   │   ├── Blocks/            # Block definitions (.json)
+│   │   └── Hitboxes/          # Block hitbox definitions
+│   ├── Category/
+│   │   └── CreativeLibrary/   # Creative mode categories
+│   ├── Groups/                # Item variant groups
+│   ├── Interactions/          # Item interaction definitions
+│   │   ├── Block/             # Block interactions
+│   │   └── Item/              # Item-on-item interactions
+│   ├── Items/                 # Item definitions (.json)
+│   │   ├── Ingredient/        # Crafting ingredients
+│   │   └── Tool/
+│   │       └── Pickaxe/       # Tool type definitions
+│   └── RootInteractions/      # Base interaction handlers
 ├── Languages/
-│   └── en-US/                    # Translations (.lang files)
-│       ├── server.lang           # Core translations
-│       ├── items.lang            # Item name translations
-│       └── ...
-└── NPC/
-    └── Roles/                    # NPC role definitions
+│   └── en-US/                 # Server-side translations
+│       ├── server.lang        # Core translations
+│       ├── items.lang         # Item names
+│       └── ui.lang            # UI text
+├── MacroCommands/             # Command macros
+├── Models/                    # Server-side model references
+├── NPC/
+│   └── Roles/                 # NPC role definitions
+├── Objective/                 # Objective/quest definitions
+├── Particles/                 # Particle system configs
+├── PortalTypes/               # Portal type definitions
+├── PrefabEditorCreationSettings/
+├── PrefabList/                # Prefab references
+├── Prefabs/                   # Structure prefabs
+├── ProjectileConfigs/         # Projectile configurations
+├── Projectiles/               # Projectile definitions
+├── ResponseCurves/            # Animation response curves
+├── ScriptedBrushes/           # World editor brushes
+├── TagPatterns/               # Tag pattern definitions
+├── Weathers/                  # Weather configurations
+├── WordLists/                 # Word list data
+└── World/                     # World configuration
 ```
 
-### Common Folder Structure (observed from real mods)
-```
-Common/
-├── Blocks/                       # Block models and textures
-├── BlockTextures/                # Block textures
-├── Characters/
-│   └── Animations/Items/         # Character item animations
-├── Icons/ItemsGenerated/         # Generated item icons
-├── Items/                        # Item models and textures
-├── Models/                       # General models
-├── Particles/Textures/           # Particle textures
-├── ScreenEffects/                # Screen effect textures
-└── UI/                           # Custom UI elements
-    └── Custom/Pages/             # Custom UI pages (.ui files)
+## World-Based Mod Configuration
+
+Hytale uses per-world mod configuration stored in `Saves/{WorldName}/config.json`:
+
+```json
+{
+  "Mods": {
+    "Buuz135:AdminUI": { "Enabled": true },
+    "NoCube:[NoCube's] Simple Bags": { "Enabled": false }
+  }
+}
 ```
 
-### Adding a Block (Summary)
-- Create JSON in `Server/Item/Items/your_block.json`.
-- Define `TranslationProperties`, `MaxStack`, `Icon`, `Categories`, `BlockType`, etc.
-- Add texture in `Common/BlockTextures/your_block_texture.png`.
-- Add translation in `Server/Languages/<locale>/server.lang` (e.g. `Example_Block.name = Example Block`).
-- Edit/preview in the **Asset Editor** in-game.
+Mods are **disabled by default** unless explicitly enabled in the world config.
 
-### Block State Changes
-- Use `Interactions -> Use -> ChangeState` to cycle states.
-- Define `State.Definitions` for textures, models, animations, hints, particles.
+## Plugin Development
 
-### Block Animations
-- Set `CustomModelAnimation` on states.
-- Animations are `.blockyanim` files created in Blockbench.
-- Animation groups must match model group names.
-
-### Item Categories
-- Create `Server/Item/Category/CreativeLibrary/MyItemCategory.json` with `Icon`, `Order`, `Children`.
-- Add translations in `Server/Languages/en-US/ui.lang`.
-- Assign categories in item JSON: `"Categories": ["MyCategory.Example_Category"]`.
-
-## Data Assets: Blocks, Items, NPCs
-HytaleDocs uses a `mods/<pack>/data` and `mods/<pack>/assets` structure, while the current Early Access tooling exposes `UserData/Packs/.../Server` and `Common` folders. Treat them as **equivalent concepts** (server/data vs common/assets).
-
-### Block Properties + Behaviors
-- **Core properties**: `hardness`, `resistance`, `material`, `transparent`, `solid`.
-- **Visuals**: `renderType`, `color`, `luminance`, `opacity`.
-- **Sound**: `soundGroup`, `breakSound`, `placeSound`, `stepSound`.
-- **Behaviors**: gravity, liquid, emissive, interactive, rotatable, connectable, breakable.
-
-### Items
-- **Core properties**: `maxStackSize`, `durability`, `rarity`, `category`.
-- **Weapon properties**: `damage`, `attackSpeed`, `knockback`, `reach`, `critChance`.
-- **Tool properties**: `miningSpeed`, `harvestLevel`, `toolType`, `efficiency`.
-- **Armor properties**: `defense`, `toughness`, `slot`, `weight`.
-- **Consumables**: `consumeTime`, `nutrition`, `saturation`, `effects`.
-- **Behaviors**: onUse, onHit, onBlockBreak, onEquip, passive, throwable, placeable, fuel.
-
-### NPCs + AI
-- **Stats**: `health`, `damage`, `speed`, `armor`, `knockbackResistance`.
-- **AI**: behavior trees, goals, sensors, targeting, movement, combat.
-- **Common goals**: attackTarget, wander, patrol, guard, idle, lookAround.
-- **Common sensors**: sight, hearing, damage, proximity, time, health.
-
-## Plugins (Java)
-**Requirements:** Java 25, Gradle 9.2.0, IntelliJ IDEA (recommended).
+### Requirements
+- **Java 25** (required SDK)
+- **Gradle 9.2.0** (build system)
+- **IntelliJ IDEA** (recommended IDE)
 
 ### Project Setup
-- Use the community template by Darkhax & Jared (includes run configs and assets).
-- Update `settings.gradle`, `gradle.properties`, and `src/main/resources/manifest.json`.
+Use the official example project template: https://github.com/Build-9/Hytale-Example-Project
 
-### Plugin Basics
-- Extend `JavaPlugin` and include a `JavaPluginInit` constructor.
-- Lifecycle: `preLoad()` → `setup()` → `start()` → `shutdown()`.
-- Plugin IDs use `Group:Name` format.
-- Install by placing `.jar` in `%AppData%/Hytale/UserData/Mods`.
+Key features:
+- Gradle automatically updates `Version` and `IncludesAssetPack` in manifest
+- Creates `HytaleServer` run configuration on import
+- VS Code support via `./gradlew generateVSCodeLaunch`
 
-### Manifest.json (Key Fields)
-- **Required**: `Name`
-- **Common**: `Group`, `Version`, `Description`, `Main`, `Authors`, `ServerVersion`, `Website`
-- **Dependencies**: `Dependencies`, `OptionalDependencies`, `LoadBefore` — all use **object format**: `{"ModId": "version"}` where `"*"` means any version (e.g., `"Dependencies": {"Hytale:EntityModule": "*"}`)
-- **Flags**: `DisabledByDefault`, `IncludesAssetPack`
-- **Advanced**: `SubPlugins` (array of sub-plugin identifiers)
+### Plugin Lifecycle
+1. `preLoad()` - Early initialization
+2. `setup()` - Register commands, events, assets
+3. `start()` - Server ready, begin operation
+4. `shutdown()` - Clean up resources
 
-### Registries (Examples)
-Plugins can register commands, events, assets, block states, entities, tasks, and more.
-
-### Example Command
-Plugins can issue UI titles with utilities like `EventTitleUtil.showEventTitleToPlayer(...)`.
-
-### Custom Config Files (Codec)
-- Define a config model using `BuilderCodec`.
-- Register with `withConfig("ExamplePlugin", ExampleConfig.CODEC)`.
-- Files are generated under `{Group}_{Name}/{ConfigName}.example.json` in the plugin folder.
-
-## Bootstrap / Early Plugins
-- Loaded before server; **no standard API access**.
-- Must implement `com.hypixel.hytale.plugin.early.ClassTransformer`.
-- Register transformer via `META-INF/services/com.hypixel.hytale.plugin.early.ClassTransformer`.
-- **Restricted packages** cannot be modified (e.g. `java`, `javax`, `io.netty`, `org.objectweb.asm`, `com.google.gson`).
-- Users must accept a startup warning (`--accept-early-plugins`).
+### Available Hytale Modules
+Plugins can depend on built-in modules:
+- `Hytale:EntityModule` - Entity management
+- `Hytale:AssetModule` - Asset handling
+- `Hytale:AccessControlModule` - Permission system
 
 ## Art Assets
-- Formats: `.blockymodel`, `.blockyanim`, `.png`, `.ogg`.
-- Primary tool: **Blockbench** with the official Hytale plugin.
-- Textures: PNG, dimensions multiples of 32px; 32px/unit for blocks, 64px/unit for characters.
 
-## Server Internals (Advanced)
-- **Architecture**: ECS, event bus, plugin manager.
-- **Network**: QUIC/UDP, default port 5520.
-- **Server jars** are not obfuscated; source code release planned 1–2 months after launch.
+### File Formats
+- **Models**: `.blockymodel` (Blockbench format)
+- **Animations**: `.blockyanim` (Blockbench animation)
+- **Textures**: `.png` (power-of-2 dimensions preferred)
+- **Audio**: `.ogg` (Vorbis)
+- **UI**: `.ui` (Hytale UI definition)
 
-## Distribution + Monetization
-- CurseForge is the official distribution partner.
-- **0% commission** for first 2 years; up to **20%** after.
-- Cosmetic mods are allowed but players must install them to see changes.
+### Texture Guidelines
+- Block textures: 32px per unit
+- Character textures: 64px per unit
+- Dimensions should be multiples of 32px
 
-## Early Access Caveats
-- Documentation incomplete; workflows still rough.
-- Asset Graph Editor is in development.
-- **Backups are mandatory**; crashes possible.
+### Tools
+- **Blockbench** with official Hytale plugin for models/animations
+- **Asset Editor** (in-game) for quick edits
+- **World Tools** (in-game) for world editing
+
+## Distribution
+
+- **CurseForge** is the official distribution platform
+- **0% commission** for first 2 years; up to 20% after
+- Cosmetic-only mods require client installation to view
+
+## Important Notes
+
+1. **Documentation may be outdated**: Official docs sometimes reference `pack.json` but real mods use `manifest.json`
+2. **Early Access caveats**: APIs and file formats may change
+3. **Always backup**: Crashes are possible during development
+4. **Server source planned**: Hypixel plans to release server source code 1-2 months after full launch
 
 ## References
-- CurseForge Hytale Modding articles (packs, blocks, animations, plugins).
-- HytaleDocs: modding overview, plugins, art assets, server internals.
+
+- CurseForge Hytale Modding Support: https://support.curseforge.com/en/support/solutions/articles/9000273178-hytale-modding
+- Hytale Example Project: https://github.com/Build-9/Hytale-Example-Project
+- HytaleDocs (community): https://hytale-docs.com

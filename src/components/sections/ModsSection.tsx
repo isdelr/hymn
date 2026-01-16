@@ -11,6 +11,9 @@ import {
   Zap,
   Trash2,
   Globe,
+  HardDrive,
+  Link2,
+  PackagePlus,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,6 +82,13 @@ const getModColors = (type: ModEntry['type']) => {
         glow: '',
       }
   }
+}
+
+const formatFileSize = (bytes: number | undefined): string => {
+  if (bytes === undefined) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export function ModsSection() {
@@ -331,27 +341,70 @@ export function ModsSection() {
                     </div>
                   </div>
 
-                  {/* Footer */}
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline" className={cn('text-[10px] font-medium', colors.badge)}>
-                        {typeLabels[entry.type]}
-                      </Badge>
-                      <Badge variant="outline" className="text-[10px] bg-muted/30">
-                        {formatLabels[entry.format]}
-                      </Badge>
-                      {entry.version && (
-                        <span className="text-[10px] text-muted-foreground">v{entry.version}</span>
-                      )}
-                    </div>
+                  {/* Badges Row */}
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className={cn('text-[10px] font-medium', colors.badge)}>
+                      {typeLabels[entry.type]}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] bg-muted/30">
+                      {formatLabels[entry.format]}
+                    </Badge>
+                    {entry.type === 'plugin' && entry.includesAssetPack && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-[10px] bg-purple-500/15 text-purple-400 border-purple-500/30 gap-1">
+                            <PackagePlus className="h-2.5 w-2.5" />
+                            Assets
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="text-xs">Includes bundled asset pack</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {entry.version && (
+                      <span className="text-[10px] text-muted-foreground">v{entry.version}</span>
+                    )}
                   </div>
+
+                  {/* Dependencies Row */}
+                  {entry.dependencies.length > 0 && (
+                    <div className="mt-2 flex items-start gap-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Link2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {entry.dependencies.length === 1
+                                ? entry.dependencies[0]
+                                : `${entry.dependencies.length} dependencies`}
+                            </span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="text-xs font-medium mb-1">Required Dependencies:</p>
+                          <ul className="text-xs text-muted-foreground space-y-0.5">
+                            {entry.dependencies.map((dep) => (
+                              <li key={dep}>{dep}</li>
+                            ))}
+                          </ul>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
                 </div>
 
-                {/* Location bar */}
-                <div className="border-t border-border/30 bg-muted/20 px-4 py-2">
+                {/* Location & Size bar */}
+                <div className="border-t border-border/30 bg-muted/20 px-4 py-2 flex items-center justify-between">
                   <p className="truncate text-[10px] text-muted-foreground">
                     {locationLabels[entry.location]}
                   </p>
+                  {entry.size !== undefined && (
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <HardDrive className="h-3 w-3" />
+                      <span>{formatFileSize(entry.size)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )

@@ -62,15 +62,17 @@ export interface ModBuildResult {
   truncated: boolean
 }
 
-export type ServerAssetKind = 'item' | 'block' | 'category' | 'other'
+export type ServerAssetKind = 'item' | 'block' | 'entity' | 'audio' | 'ui' | 'model' | 'texture' | 'script' | 'category' | 'other'
 
 export interface ServerAsset {
   id: string
   name: string
+  displayName?: string
   relativePath: string
   absolutePath: string
   kind: ServerAssetKind
   size: number | null
+  metadata?: Record<string, any>
 }
 
 export interface ServerAssetListOptions {
@@ -82,7 +84,13 @@ export interface ServerAssetListResult {
   assets: ServerAsset[]
 }
 
-export type ServerAssetTemplate = 'item' | 'block' | 'category' | 'empty'
+export type ServerAssetTemplate =
+  | 'item' | 'item_sword' | 'item_pickaxe'
+  | 'block' | 'block_simple' | 'block_liquid'
+  | 'entity' | 'entity_npc' | 'entity_mob'
+  | 'audio' | 'audio_sfx'
+  | 'ui' | 'ui_page'
+  | 'category' | 'empty'
 
 export interface CreateServerAssetOptions {
   path: string
@@ -174,6 +182,7 @@ export interface ModEntry {
   optionalDependencies: string[]
   entryPoint: string | null
   includesAssetPack: boolean
+  size?: number // File/folder size in bytes
 }
 
 export interface Profile {
@@ -256,6 +265,41 @@ export interface CreatePackResult {
   success: boolean
   path: string
   manifestPath: string
+}
+
+export interface CreatePluginOptions {
+  name: string
+  group: string // e.g., "com.example" - required for Java package structure
+  version?: string
+  description?: string
+  authorName?: string
+  includesAssetPack?: boolean
+  patchline?: 'release' | 'pre-release'
+  javaVersion?: number
+}
+
+export interface CreatePluginResult {
+  success: boolean
+  path: string
+  manifestPath: string
+  mainClassPath: string
+}
+
+export interface FileNode {
+  name: string
+  type: 'file' | 'directory'
+  path: string
+  parentPath: string | null
+  children?: FileNode[]
+}
+
+export interface ListProjectFilesOptions {
+  path: string
+  recursive?: boolean
+}
+
+export interface ListProjectFilesResult {
+  root: FileNode
 }
 
 export interface BackupInfo {
@@ -356,6 +400,7 @@ export interface HymnApi {
   addMods: () => Promise<AddModResult>
   // Pack/mod creation and editing
   createPack: (options: CreatePackOptions) => Promise<CreatePackResult>
+  createPlugin: (options: CreatePluginOptions) => Promise<CreatePluginResult>
   getModManifest: (options: ModManifestOptions) => Promise<ModManifestResult>
   saveModManifest: (options: SaveManifestOptions) => Promise<SaveManifestResult>
   listModAssets: (options: ModAssetsOptions) => Promise<ModAssetsResult>
@@ -373,4 +418,8 @@ export interface HymnApi {
   exportModpack: (options: ExportModpackOptions) => Promise<ExportModpackResult>
   importModpack: () => Promise<ImportModpackResult>
   openInExplorer: (path: string) => Promise<void>
+  listProjectFiles: (options: ListProjectFilesOptions) => Promise<ListProjectFilesResult>
+  readFile: (path: string) => Promise<string>
+  saveFile: (path: string, content: string) => Promise<{ success: boolean }>
+  checkPathExists: (path: string) => Promise<boolean>
 }

@@ -11,7 +11,16 @@
       "Bash(npm run build:*)",
       "Bash(dir \"C:\\\\Users\\\\isaia\\\\OneDrive\\\\Desktop\\\\example mods\" /b)",
       "Bash(dir:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(Select-Object Name, LastWriteTime \")",
+      "Bash(python:*)",
+      "WebFetch(domain:hytale-docs.com)",
+      "WebFetch(domain:support.curseforge.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

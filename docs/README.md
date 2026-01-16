@@ -18,7 +18,8 @@ Hymn is a dark-mode mod manager for **Hytale (Early Access)**. It installs, enab
 ## Docs Map
 - `docs/product-vision.md` - Mission, target users, MVP checklist
 - `docs/ui-ux.md` - Visual design direction and components
-- `docs/modding-reference.md` - Hytale modding primer
+- `docs/modding-reference.md` - Hytale modding primer (verified with real mods)
+- `docs/mod-analysis.md` - **NEW**: Detailed analysis of real Hytale mods
 - `docs/architecture.md` - System design and data flow
 - `docs/data-models.md` - JSON schemas for data entities
 - `docs/dependencies.md` - Development dependencies

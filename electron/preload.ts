@@ -22,6 +22,7 @@ const api: HymnApi = {
   addMods: () => ipcRenderer.invoke('hymn:add-mods'),
   // Pack/mod creation and editing
   createPack: (options) => ipcRenderer.invoke('hymn:create-pack', options),
+  createPlugin: (options) => ipcRenderer.invoke('hymn:create-plugin', options),
   getModManifest: (options) => ipcRenderer.invoke('hymn:get-mod-manifest', options),
   saveModManifest: (options) => ipcRenderer.invoke('hymn:save-mod-manifest', options),
   listModAssets: (options) => ipcRenderer.invoke('hymn:list-mod-assets', options),
@@ -39,6 +40,10 @@ const api: HymnApi = {
   exportModpack: (options) => ipcRenderer.invoke('hymn:export-modpack', options),
   importModpack: () => ipcRenderer.invoke('hymn:import-modpack'),
   openInExplorer: (path: string) => ipcRenderer.invoke('hymn:open-in-explorer', path),
+  listProjectFiles: (options) => ipcRenderer.invoke('hymn:list-project-files', options),
+  readFile: (path: string) => ipcRenderer.invoke('hymn:read-file', path),
+  saveFile: (path: string, content: string) => ipcRenderer.invoke('hymn:save-file', path, content),
+  checkPathExists: (path: string) => ipcRenderer.invoke('hymn:check-path-exists', path),
 }
 
 contextBridge.exposeInMainWorld('hymn', api)

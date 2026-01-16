@@ -19,15 +19,14 @@ Give players and creators a safe, delightful way to manage, configure, and build
 2. **Mod library scan** across Packs, Plugins, Early Plugins.
 3. **Profiles** with enable/disable sets, load order, and conflict warnings.
 4. **Apply/rollback pipeline** with automatic backups and restore points.
-5. **Creation workspace**
-   - Pack wizard (manifest + Common/Server scaffolding).
-   - JSON editor with schema validation and helpful templates.
-   - Plugin config editor for generated Codec JSON.
+5. **Mod Playground (Creation)**
+   - **Projects Dashboard**: Manage local source packs/plugins.
+   - **Integrated IDE**: Visual file explorer, split-view editors (Visual/Code), and asset previewer.
+   - **Smart Editors**: Schema-aware forms for Items, Blocks, and Manifests.
 6. **Import/Export** zipped modpacks with metadata.
 7. **Diagnostics** view: logs, missing paths, invalid manifests.
 
 ## Phase 2 (Nice-to-Have)
-- Asset previews (textures, models, animations).
 - Plugin build runner (Gradle tasks).
 - Mod browser integration (CurseForge links/downloads).
 - Visual scripting support when released by Hytale.

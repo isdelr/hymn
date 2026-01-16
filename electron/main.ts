@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createWriteStream } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { createClient, type Client } from '@libsql/client'
@@ -16,6 +17,8 @@ import type {
   BackupSnapshot,
   CreatePackOptions,
   CreatePackResult,
+  CreatePluginOptions,
+  CreatePluginResult,
   ExportModpackOptions,
   ExportModpackResult,
   ImportModpackResult,
@@ -64,6 +67,9 @@ import type {
   DeleteModOptions,
   DeleteModResult,
   AddModResult,
+  FileNode,
+  ListProjectFilesOptions,
+  ListProjectFilesResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -149,6 +155,29 @@ async function pathExists(target: string) {
     return true
   } catch {
     return false
+  }
+}
+
+async function getPathSize(target: string): Promise<number | undefined> {
+  try {
+    const stat = await fs.stat(target)
+    if (stat.isFile()) {
+      return stat.size
+    }
+    if (stat.isDirectory()) {
+      let total = 0
+      const entries = await fs.readdir(target, { withFileTypes: true })
+      for (const entry of entries) {
+        const entrySize = await getPathSize(path.join(target, entry.name))
+        if (entrySize !== undefined) {
+          total += entrySize
+        }
+      }
+      return total
+    }
+    return undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -1006,17 +1035,118 @@ const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, l
     MaxStack: 64,
     Icon: `Icons/ItemsGenerated/${id}.png`,
     Model: `Items/${id}.blockymodel`,
-    Texture: `Items/${id}.png`,
-    Scale: 1.0,
+    Texture: `Icons/ItemsGenerated/${id}.png`
   }),
-  block: (id, _label) => ({
-    PlayerAnimationsId: 'Block',
-    Categories: ['Blocks.Building'],
-    MaxStack: 64,
-    BlockType: id,
+  item_sword: (id, label) => ({
+    PlayerAnimationsId: 'OneHanded',
+    Categories: ['Items.Weapons'],
+    MaxStack: 1,
     Icon: `Icons/ItemsGenerated/${id}.png`,
-    Model: `Blocks/${id}.blockymodel`,
-    Texture: `Blocks/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    Texture: `Icons/ItemsGenerated/${id}.png`,
+    TranslationProperties: {
+      Name: label
+    },
+    Attacks: [
+      {
+        Damage: 10,
+        Reach: 2.5,
+        Time: 0.6
+      }
+    ],
+    Durability: 250
+  }),
+  item_pickaxe: (id, label) => ({
+    PlayerAnimationsId: 'Pickaxe',
+    Categories: ['Items.Tools'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    Texture: `Icons/ItemsGenerated/${id}.png`,
+    TranslationProperties: {
+      Name: label
+    },
+    GatheringAttributes: {
+      Type: "Pickaxe",
+      Level: 1,
+      Efficiency: 5.0
+    },
+    Durability: 500
+  }),
+  block: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: {
+      Name: label
+    },
+    ExampleState: {
+      RenderType: "Solid",
+      Collidable: true
+    }
+  }),
+  block_simple: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: { Name: label },
+    ExampleState: {
+      RenderType: "Solid",
+      Collidable: true,
+      Hardness: 1.0,
+      Resistance: 5.0
+    }
+  }),
+  block_liquid: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: { Name: label },
+    ExampleState: {
+      RenderType: "Fluid",
+      Collidable: false,
+      Liquid: true,
+      Viscosity: 0.1
+    }
+  }),
+  entity: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Neutral"
+  }),
+  entity_npc: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Neutral",
+    Goals: ["Wander", "LookAround"]
+  }),
+  entity_mob: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Hostile",
+    Goals: ["Wander", "LookAround", "AttackTarget"],
+    Sensors: ["Sight", "Hearing"]
+  }),
+  audio: () => ({
+    Events: []
+  }),
+  audio_sfx: (id) => ({
+    Name: id,
+    Events: []
+  }),
+  ui: () => ({
+    Type: "Panel"
+  }),
+  ui_page: (id) => ({
+    Name: id,
+    Type: "Panel",
+    Layout: "Vertical"
   }),
   category: (id, _label) => ({
     Icon: `Icons/${id}.png`,
@@ -1066,12 +1196,23 @@ function formatAssetLabel(name: string) {
   return stripped.replace(/[-_]+/g, ' ').trim() || stripped
 }
 
-function resolveServerAssetKind(relativePath: string): ServerAssetKind {
-  const lowered = relativePath.toLowerCase()
-  if (lowered.includes('/item/items/')) return 'item'
-  if (lowered.includes('/item/blocks/')) return 'block'
-  if (lowered.includes('/item/category/')) return 'category'
-  if (lowered.includes('/blocks/')) return 'block'
+function resolveServerAssetKind(relativePath: string, filePath: string): ServerAssetKind {
+  const content = fsSync.readFileSync(filePath, 'utf-8')
+  // Try to heuristic check by path first
+  const loweredPath = relativePath.toLowerCase()
+  if (loweredPath.includes('/items/') || loweredPath.includes('/item/')) return 'item'
+  if (loweredPath.includes('/blocks/') || loweredPath.includes('/block/')) return 'block'
+  if (loweredPath.includes('/entity/') || loweredPath.includes('/npc/')) return 'entity'
+
+  // Naive content check
+  try {
+    const json = JSON.parse(content)
+    if (json.BlockType) return 'block'
+    if (json.Prefab) return 'entity'
+    if (json.PlayerAnimationsId || json.MaxStack) return 'item'
+    if (json.Events && Array.isArray(json.Events)) return 'audio'
+  } catch { }
+
   return 'other'
 }
 
@@ -1083,7 +1224,7 @@ async function buildServerAssetEntry(rootPath: string, filePath: string): Promis
     name: path.basename(filePath),
     relativePath,
     absolutePath: filePath,
-    kind: resolveServerAssetKind(relativePath),
+    kind: resolveServerAssetKind(relativePath, filePath),
     size: stat.size,
   }
 }
@@ -2054,6 +2195,7 @@ function createModEntry(params: {
   hasClasses?: boolean
   enabledOverride?: boolean
   enabledOverrides?: Map<string, boolean>
+  size?: number
 }): ModEntry {
   const name = typeof params.manifest?.Name === 'string' ? params.manifest.Name : params.fallbackName
   const group = typeof params.manifest?.Group === 'string' ? params.manifest.Group : undefined
@@ -2103,6 +2245,7 @@ function createModEntry(params: {
     enabled,
     dependencies,
     optionalDependencies,
+    size: params.size,
   }
 }
 
@@ -2127,6 +2270,8 @@ async function scanPacksFolder(
       // Failed to read manifest.json
     }
 
+    const size = await getPathSize(fullPath)
+
     const modEntry = createModEntry({
       manifest,
       fallbackName: entry.name,
@@ -2135,6 +2280,7 @@ async function scanPacksFolder(
       path: fullPath,
       enabledOverride,
       enabledOverrides,
+      size,
     })
 
     mods.push(modEntry)
@@ -2163,6 +2309,8 @@ async function scanModsFolder(
         // Failed to read manifest.json
       }
 
+      const size = await getPathSize(fullPath)
+
       const modEntry = createModEntry({
         manifest,
         fallbackName: entry.name,
@@ -2171,6 +2319,7 @@ async function scanModsFolder(
         path: fullPath,
         enabledOverride,
         enabledOverrides,
+        size,
       })
 
       mods.push(modEntry)
@@ -2193,6 +2342,7 @@ async function scanModsFolder(
       // Failed to read archive manifest
     }
 
+    const size = await getPathSize(fullPath)
     const format: ModFormat = lowerName.endsWith('.jar') ? 'jar' : 'zip'
     const modEntry = createModEntry({
       manifest,
@@ -2203,6 +2353,7 @@ async function scanModsFolder(
       hasClasses,
       enabledOverride,
       enabledOverrides,
+      size,
     })
 
     mods.push(modEntry)
@@ -2236,6 +2387,8 @@ async function scanEarlyPluginsFolder(
       // Failed to read archive manifest
     }
 
+    const size = await getPathSize(fullPath)
+
     const modEntry = createModEntry({
       manifest,
       fallbackName: entry.name,
@@ -2245,6 +2398,7 @@ async function scanEarlyPluginsFolder(
       hasClasses,
       enabledOverride,
       enabledOverrides,
+      size,
     })
 
     mods.push(modEntry)
@@ -2551,6 +2705,572 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
   }
 }
 
+async function createPlugin(options: CreatePluginOptions): Promise<CreatePluginResult> {
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  const pluginName = options.name.trim() || 'NewPlugin'
+  const safeName = pluginName.replace(/[^a-zA-Z0-9_-]/g, '')
+  const group = options.group.trim() || 'com.example'
+  const version = options.version?.trim() || '0.0.1'
+  const javaVersion = options.javaVersion ?? 25
+  const patchline = options.patchline ?? 'release'
+  const includesAssetPack = options.includesAssetPack ?? true
+
+  // Plugin goes into Mods folder
+  const modsPath = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+  await ensureDir(modsPath)
+
+  const pluginPath = path.join(modsPath, safeName)
+  if (await pathExists(pluginPath)) {
+    throw new Error(`A plugin named "${safeName}" already exists.`)
+  }
+
+  await ensureDir(pluginPath)
+
+  // Create directory structure
+  const packagePath = group.replace(/\./g, '/')
+  const javaSourcePath = path.join(pluginPath, 'src', 'main', 'java', packagePath)
+  const resourcesPath = path.join(pluginPath, 'src', 'main', 'resources')
+  const serverResourcesPath = path.join(resourcesPath, 'Server')
+  const gradleWrapperPath = path.join(pluginPath, 'gradle', 'wrapper')
+
+  await ensureDir(javaSourcePath)
+  await ensureDir(resourcesPath)
+  await ensureDir(serverResourcesPath)
+  await ensureDir(gradleWrapperPath)
+
+  // Generate main class name from plugin name
+  const mainClassName = safeName.charAt(0).toUpperCase() + safeName.slice(1)
+  const fullMainClass = `${group}.${mainClassName}`
+
+  // --- Template Files ---
+
+  // settings.gradle
+  const settingsGradle = `rootProject.name = '${safeName}'
+`
+  await fs.writeFile(path.join(pluginPath, 'settings.gradle'), settingsGradle, 'utf-8')
+
+  // gradle.properties
+  const gradleProperties = `# The current version of your project. Please use semantic versioning!
+version=${version}
+
+# The group ID used for maven publishing. Usually the same as your package name
+# but not the same as your plugin group!
+maven_group=${group}
+
+# The version of Java used by your plugin. The game is built on Java 21 but
+# actually runs on Java 25.
+java_version=${javaVersion}
+
+# Determines if your plugin should also be loaded as an asset pack. If your
+# pack contains assets, or you intend to use the in-game asset editor, you
+# want this to be true.
+includes_pack=${includesAssetPack}
+
+# The release channel your plugin should be built and ran against. This is
+# usually release or pre-release. You can verify your settings in the
+# official launcher.
+patchline=${patchline}
+
+# Determines if the development server should also load mods from the user's
+# standard mods folder. This lets you test mods by installing them where a
+# normal player would, instead of adding them as dependencies or adding them
+# to the development server manually.
+load_user_mods=false
+
+# If Hytale was installed to a custom location, you must set the home path
+# manually. You may also want to use a custom path if you are building in
+# a non-standard environment like a build server. The home path should
+# the folder that contains the install and UserData folder.
+# hytale_home=./test-file
+`
+  await fs.writeFile(path.join(pluginPath, 'gradle.properties'), gradleProperties, 'utf-8')
+
+  // build.gradle
+  const buildGradle = `plugins {
+    id 'java'
+}
+
+group = project.maven_group
+version = project.version
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(project.java_version as int)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Locate Hytale installation
+def hytaleHome = project.hasProperty('hytale_home') && project.hytale_home?.trim()
+    ? file(project.hytale_home)
+    : file(System.getProperty('os.name').toLowerCase().contains('win')
+        ? System.getenv('LOCALAPPDATA') + '/Hytale'
+        : System.getProperty('os.name').toLowerCase().contains('mac')
+            ? System.getProperty('user.home') + '/Library/Application Support/Hytale'
+            : System.getProperty('user.home') + '/.local/share/Hytale')
+
+def patchline = project.hasProperty('patchline') ? project.patchline : 'release'
+def hytaleInstall = file("\${hytaleHome}/install/\${patchline}")
+def hytaleServer = file("\${hytaleInstall}/server/HytaleServer.jar")
+
+dependencies {
+    compileOnly files(hytaleServer)
+}
+
+// Update manifest.json with version and includes_pack from gradle.properties
+tasks.register('updatePluginManifest') {
+    def manifestFile = file('src/main/resources/manifest.json')
+    doLast {
+        if (manifestFile.exists()) {
+            def manifest = new groovy.json.JsonSlurper().parse(manifestFile)
+            manifest.Version = project.version
+            manifest.IncludesAssetPack = project.includes_pack.toBoolean()
+            manifestFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest))
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn 'updatePluginManifest'
+}
+
+// Build JAR
+tasks.named('jar') {
+    from('src/main/resources') {
+        include '**/*'
+    }
+    archiveBaseName = project.name
+    archiveVersion = project.version
+    destinationDirectory = file("\${buildDir}/libs")
+}
+
+// IntelliJ IDEA run configuration
+idea {
+    module {
+        inheritOutputDirs = true
+    }
+}
+
+tasks.register('generateIdeaRunConfig') {
+    def runDir = file("\${projectDir}/run")
+    def configDir = file("\${projectDir}/.idea/runConfigurations")
+
+    doLast {
+        configDir.mkdirs()
+        def loadUserMods = project.hasProperty('load_user_mods') && project.load_user_mods.toBoolean()
+        def userDataMods = loadUserMods ? "\${hytaleHome}/UserData/Mods" : ''
+
+        def configXml = """<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run Hytale Server" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.hypixel.hytale.server.HytaleServer" />
+    <module name="\${project.name}.main" />
+    <option name="PROGRAM_PARAMETERS" value="--mod-paths=&quot;\${projectDir}/build/libs&quot;\${loadUserMods ? ",&quot;\${userDataMods}&quot;" : ''} --asset-paths=&quot;\${projectDir}/src/main/resources&quot;" />
+    <option name="WORKING_DIRECTORY" value="\${runDir}" />
+    <classpath>
+      <root path="\${hytaleServer}" type="path" />
+    </classpath>
+  </configuration>
+</component>"""
+        file("\${configDir}/Run_Hytale_Server.xml").text = configXml
+    }
+}
+
+// VS Code launch configuration
+tasks.register('generateVSCodeLaunch') {
+    def vscodeDir = file("\${projectDir}/.vscode")
+
+    doLast {
+        vscodeDir.mkdirs()
+        def loadUserMods = project.hasProperty('load_user_mods') && project.load_user_mods.toBoolean()
+        def userDataMods = loadUserMods ? ",\${hytaleHome}/UserData/Mods" : ''
+
+        def launchJson = """{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Run Hytale Server",
+            "request": "launch",
+            "mainClass": "com.hypixel.hytale.server.HytaleServer",
+            "classPaths": ["\${hytaleServer}"],
+            "args": "--mod-paths=\\"\${projectDir}/build/libs\\"\${loadUserMods ? ",\\"\${userDataMods}\\"" : ''} --asset-paths=\\"\${projectDir}/src/main/resources\\"",
+            "cwd": "\${projectDir}/run"
+        }
+    ]
+}"""
+        file("\${vscodeDir}/launch.json").text = launchJson
+    }
+}
+`
+  await fs.writeFile(path.join(pluginPath, 'build.gradle'), buildGradle, 'utf-8')
+
+  // .gitignore
+  const gitignore = `### Gradle ###
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### Hytale ###
+run/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+`
+  await fs.writeFile(path.join(pluginPath, '.gitignore'), gitignore, 'utf-8')
+
+  // gradlew (Unix)
+  const gradlew = `#!/bin/sh
+
+#
+# Copyright 2015-2021 the original authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+##############################################################################
+##
+##  Gradle start up script for UN*X
+##
+##############################################################################
+
+# Attempt to set APP_HOME
+# Resolve links: $0 may be a link
+PRG="$0"
+while [ -h "$PRG" ] ; do
+    ls=\`ls -ld "$PRG"\`
+    link=\`expr "$ls" : '.*-> \\(.*\\)$'\`
+    if expr "$link" : '/.*' > /dev/null; then
+        PRG="$link"
+    else
+        PRG=\`dirname "$PRG"\`"/$link"
+    fi
+done
+SAVED="\`pwd\`"
+cd "\`dirname \\"$PRG\\"\`/" >/dev/null
+APP_HOME="\`pwd -P\`"
+cd "$SAVED" >/dev/null
+
+APP_NAME="Gradle"
+APP_BASE_NAME=\`basename "$0"\`
+
+# Add default JVM options here.
+DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+
+# Use the maximum available, or set MAX_FD != -1 to use that value.
+MAX_FD="maximum"
+
+warn () {
+    echo "$*"
+}
+
+die () {
+    echo
+    echo "$*"
+    echo
+    exit 1
+}
+
+# OS specific support
+cygwin=false
+msys=false
+darwin=false
+nonstop=false
+case "\`uname\`" in
+  CYGWIN* )
+    cygwin=true
+    ;;
+  Darwin* )
+    darwin=true
+    ;;
+  MSYS* | MINGW* )
+    msys=true
+    ;;
+  NONSTOP* )
+    nonstop=true
+    ;;
+esac
+
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+
+# Determine the Java command to use to start the JVM.
+if [ -n "$JAVA_HOME" ] ; then
+    if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
+        JAVACMD="$JAVA_HOME/jre/sh/java"
+    else
+        JAVACMD="$JAVA_HOME/bin/java"
+    fi
+    if [ ! -x "$JAVACMD" ] ; then
+        die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME"
+    fi
+else
+    JAVACMD="java"
+    which java >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH."
+fi
+
+# Increase the maximum file descriptors if we can.
+if [ "$cygwin" = "false" ] && [ "$darwin" = "false" ] && [ "$nonstop" = "false" ] ; then
+    MAX_FD_LIMIT=\`ulimit -H -n\`
+    if [ $? -eq 0 ] ; then
+        if [ "$MAX_FD" = "maximum" ] || [ "$MAX_FD" = "max" ] ; then
+            MAX_FD="$MAX_FD_LIMIT"
+        fi
+        ulimit -n $MAX_FD
+        if [ $? -ne 0 ] ; then
+            warn "Could not set maximum file descriptor limit: $MAX_FD"
+        fi
+    else
+        warn "Could not query maximum file descriptor limit: $MAX_FD_LIMIT"
+    fi
+fi
+
+# For Cygwin or MSYS, switch paths to Windows format before running java
+if [ "$cygwin" = "true" ] || [ "$msys" = "true" ] ; then
+    APP_HOME=\`cygpath --path --mixed "$APP_HOME"\`
+    CLASSPATH=\`cygpath --path --mixed "$CLASSPATH"\`
+    JAVACMD=\`cygpath --unix "$JAVACMD"\`
+fi
+
+# Collect all arguments for the java command;
+#   * DEFAULT_JVM_OPTS, JAVA_OPTS, and GRADLE_OPTS environment variables
+#   * Command line arguments
+eval set -- $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS "\\"-Dorg.gradle.appname=$APP_BASE_NAME\\"" -classpath "\\"$CLASSPATH\\"" org.gradle.wrapper.GradleWrapperMain "$@"
+
+exec "$JAVACMD" "$@"
+`
+  await fs.writeFile(path.join(pluginPath, 'gradlew'), gradlew, 'utf-8')
+  // Make gradlew executable on Unix systems
+  try {
+    await fs.chmod(path.join(pluginPath, 'gradlew'), 0o755)
+  } catch {
+    // Ignore chmod errors on Windows
+  }
+
+  // gradlew.bat (Windows)
+  const gradlewBat = `@rem
+@rem Copyright 2015-2021 the original authors.
+@rem
+@rem Licensed under the Apache License, Version 2.0 (the "License");
+@rem you may not use this file except in compliance with the License.
+@rem You may obtain a copy of the License at
+@rem
+@rem      https://www.apache.org/licenses/LICENSE-2.0
+@rem
+@rem Unless required by applicable law or agreed to in writing, software
+@rem distributed under the License is distributed on an "AS IS" BASIS,
+@rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+@rem See the License for the specific language governing permissions and
+@rem limitations under the License.
+@rem
+
+@if "%DEBUG%" == "" @echo off
+@rem ##########################################################################
+@rem
+@rem  Gradle startup script for Windows
+@rem
+@rem ##########################################################################
+
+@rem Set local scope for the variables with windows NT shell
+if "%OS%"=="Windows_NT" setlocal
+
+set DIRNAME=%~dp0
+if "%DIRNAME%" == "" set DIRNAME=.
+set APP_BASE_NAME=%~n0
+set APP_HOME=%DIRNAME%
+
+@rem Add default JVM options here.
+set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
+
+@rem Find java.exe
+if defined JAVA_HOME goto findJavaFromJavaHome
+
+set JAVA_EXE=java.exe
+%JAVA_EXE% -version >NUL 2>&1
+if "%ERRORLEVEL%" == "0" goto execute
+
+echo.
+echo ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:findJavaFromJavaHome
+set JAVA_HOME=%JAVA_HOME:"=%
+set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+
+if exist "%JAVA_EXE%" goto execute
+
+echo.
+echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME%
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:execute
+@rem Setup the command line
+
+set CLASSPATH=%APP_HOME%\\gradle\\wrapper\\gradle-wrapper.jar
+
+
+@rem Execute Gradle
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+
+:end
+@rem End local scope for the variables with windows NT shell
+if "%ERRORLEVEL%"=="0" goto mainEnd
+
+:fail
+rem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of
+rem having the terminal window close on error.
+if  not "" == "%GRADLE_EXIT_CONSOLE%" exit 1
+exit /b 1
+
+:mainEnd
+if "%OS%"=="Windows_NT" endlocal
+
+:omega
+`
+  await fs.writeFile(path.join(pluginPath, 'gradlew.bat'), gradlewBat, 'utf-8')
+
+  // gradle-wrapper.properties
+  const gradleWrapperProperties = `distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10-bin.zip
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+`
+  await fs.writeFile(path.join(gradleWrapperPath, 'gradle-wrapper.properties'), gradleWrapperProperties, 'utf-8')
+
+  // Download gradle-wrapper.jar (or create a placeholder that will auto-download)
+  // For simplicity, we'll create a minimal README explaining to run gradle wrapper
+  const gradleWrapperReadme = `# Gradle Wrapper
+
+The gradle-wrapper.jar file will be downloaded automatically when you first run:
+
+    ./gradlew build    (Linux/Mac)
+    gradlew.bat build  (Windows)
+
+Or you can download it manually from:
+https://github.com/gradle/gradle/tree/master/gradle/wrapper
+`
+  await fs.writeFile(path.join(gradleWrapperPath, 'README.md'), gradleWrapperReadme, 'utf-8')
+
+  // manifest.json
+  const manifest = {
+    Group: group.split('.').pop() || safeName,
+    Name: pluginName,
+    Version: version,
+    Description: options.description?.trim() || `A Hytale plugin created with Hymn.`,
+    Authors: options.authorName?.trim() ? [{ Name: options.authorName.trim() }] : [{ Name: 'Unknown' }],
+    Website: '',
+    ServerVersion: '*',
+    Dependencies: {},
+    OptionalDependencies: {},
+    DisabledByDefault: false,
+    Main: fullMainClass,
+    IncludesAssetPack: includesAssetPack,
+  }
+  const manifestPath = path.join(resourcesPath, 'manifest.json')
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 4), 'utf-8')
+
+  // Main Java class
+  const mainJavaClass = `package ${group};
+
+import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.server.core.plugin.JavaPlugin;
+import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
+
+import javax.annotation.Nonnull;
+
+/**
+ * Main entry point for the ${pluginName} plugin.
+ * Use the setup method to register commands, event listeners, and other game hooks.
+ */
+public class ${mainClassName} extends JavaPlugin {
+
+    private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
+
+    public ${mainClassName}(@Nonnull JavaPluginInit init) {
+        super(init);
+        LOGGER.atInfo().log("${pluginName} v" + this.getManifest().getVersion().toString() + " loaded!");
+    }
+
+    @Override
+    protected void setup() {
+        LOGGER.atInfo().log("Setting up ${pluginName}...");
+
+        // Register your commands here:
+        // this.getCommandRegistry().registerCommand(new MyCommand());
+
+        // Register event listeners here:
+        // this.getEventRegistry().registerListener(new MyEventListener());
+    }
+}
+`
+  const mainClassPath = path.join(javaSourcePath, `${mainClassName}.java`)
+  await fs.writeFile(mainClassPath, mainJavaClass, 'utf-8')
+
+  return {
+    success: true,
+    path: pluginPath,
+    manifestPath,
+    mainClassPath,
+  }
+}
+
 async function getBackups(): Promise<BackupInfo[]> {
   const backupsRoot = getBackupsRoot()
   if (!(await pathExists(backupsRoot))) {
@@ -2723,6 +3443,56 @@ async function importModpack(): Promise<ImportModpackResult> {
   }
 }
 
+async function listProjectFiles(options: ListProjectFilesOptions): Promise<ListProjectFilesResult> {
+  const rootPath = options.path
+  if (!(await pathExists(rootPath))) {
+    throw new Error('Project path not found.')
+  }
+
+  async function buildTree(currentPath: string, parentPath: string | null = null): Promise<FileNode> {
+    const name = path.basename(currentPath)
+    const stat = await fs.stat(currentPath)
+
+    if (stat.isFile()) {
+      return { name, type: 'file', path: currentPath, parentPath }
+    }
+
+    const node: FileNode = { name, type: 'directory', path: currentPath, parentPath, children: [] }
+
+    if (options.recursive !== false) {
+      const entries = await fs.readdir(currentPath, { withFileTypes: true })
+      for (const entry of entries) {
+        // Skip hidden and build folders
+        if (entry.name.startsWith('.') || entry.name === 'build' || entry.name === 'node_modules') continue
+        const childPath = path.join(currentPath, entry.name)
+        node.children!.push(await buildTree(childPath, currentPath))
+      }
+
+      // Sort: directories first, then alphabetically
+      node.children!.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name)
+        return a.type === 'directory' ? -1 : 1
+      })
+    }
+
+    return node
+  }
+
+  return { root: await buildTree(rootPath) }
+}
+
+async function readFile(filePath: string): Promise<string> {
+  if (!(await pathExists(filePath))) {
+    throw new Error('File not found.')
+  }
+  return await fs.readFile(filePath, 'utf-8')
+}
+
+async function saveFile(filePath: string, content: string): Promise<{ success: boolean }> {
+  await fs.writeFile(filePath, content, 'utf-8')
+  return { success: true }
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('hymn:get-install-info', async () => resolveInstallInfo())
 
@@ -2758,6 +3528,7 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:delete-mod', async (_event, options: DeleteModOptions) => deleteMod(options))
   ipcMain.handle('hymn:add-mods', async () => addMods())
   ipcMain.handle('hymn:create-pack', async (_event, options: CreatePackOptions) => createPack(options))
+  ipcMain.handle('hymn:create-plugin', async (_event, options: CreatePluginOptions) => createPlugin(options))
   ipcMain.handle('hymn:get-mod-manifest', async (_event, options: ModManifestOptions) => getModManifest(options))
   ipcMain.handle('hymn:save-mod-manifest', async (_event, options: SaveManifestOptions) => saveModManifest(options))
   ipcMain.handle('hymn:list-mod-assets', async (_event, options: ModAssetsOptions) => listModAssets(options))
@@ -2786,4 +3557,8 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:open-in-explorer', async (_event, targetPath: string) => {
     await shell.openPath(targetPath)
   })
+  ipcMain.handle('hymn:list-project-files', async (_event, options: ListProjectFilesOptions) => listProjectFiles(options))
+  ipcMain.handle('hymn:read-file', async (_event, filePath: string) => readFile(filePath))
+  ipcMain.handle('hymn:save-file', async (_event, filePath: string, content: string) => saveFile(filePath, content))
+  ipcMain.handle('hymn:check-path-exists', async (_event, filePath: string) => pathExists(filePath))
 }

@@ -137,6 +137,12 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       path: 'C:\\Hytale\\packs\\TestPack',
       manifestPath: 'C:\\Hytale\\packs\\TestPack\\manifest.json',
     }),
+    createPlugin: vi.fn().mockResolvedValue({
+      success: true,
+      path: 'C:\\Hytale\\mods\\TestPlugin',
+      manifestPath: 'C:\\Hytale\\mods\\TestPlugin\\src\\main\\resources\\manifest.json',
+      mainClassPath: 'C:\\Hytale\\mods\\TestPlugin\\src\\main\\java\\com\\example\\TestPlugin.java',
+    }),
     getModManifest: vi.fn().mockResolvedValue({
       manifestPath: 'C:\\Hytale\\packs\\TestPack\\manifest.json',
       content: '{"Name":"TestPack"}',
@@ -257,6 +263,19 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       success: true,
       addedPaths: ['C:\\Hytale\\UserData\\Mods\\TestMod.zip'],
     }),
+    // File operation methods
+    listProjectFiles: vi.fn().mockResolvedValue({
+      root: {
+        name: 'TestPack',
+        type: 'directory',
+        path: 'C:\\Hytale\\packs\\TestPack',
+        parentPath: null,
+        children: [],
+      },
+    }),
+    readFile: vi.fn().mockResolvedValue(''),
+    saveFile: vi.fn().mockResolvedValue({ success: true }),
+    checkPathExists: vi.fn().mockResolvedValue(true),
   }
 
   const merged = { ...api, ...overrides } as HymnApi

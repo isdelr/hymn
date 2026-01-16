@@ -23,22 +23,51 @@ Hymn is an Electron app with a secure main/renderer split. The main process owns
 - **Backup Engine**: versioned snapshots with cleanup policies.
 - **Validation**: schema checks, missing fields, dependency warnings.
 
-## Archive Classification (Observed)
-- Archives ship with a root `manifest.json` plus `Common/` + `Server/` data.
-- `.zip` files are often **pack-only** (no Java classes).
-- `.jar` files can include Java plugin classes and may also include assets (`IncludesAssetPack`).
-- Detect type by manifest fields (`Main`, `IncludesAssetPack`) and presence of Java classes.
+## Archive Classification (Verified January 2026)
 
-### Local Examples (Installed Mods)
-- **McwHyPaintings_1.0.0.zip**
-  - Pack-only archive with `Common/Blocks/...`, `Server/Item/...`, and `Server/Languages/...`.
-  - Manifest has no `Main` entry.
-- **Violets_Furnishings.zip**
-  - Pack-only archive with extensive `Common/Blocks/...` art assets and `Server/...` data.
-  - Manifest has no `Main` entry.
-- **ymmersive-statues-1.0.1.jar**
-  - Java plugin class `net.conczin.YmmersiveStatues` with `IncludesAssetPack: true`.
-  - Has `Common/` and `Server/` assets plus Java classes.
+Archives ship with a root `manifest.json` plus optional `Common/` and/or `Server/` directories.
+
+### Detection Logic
+```
+IF manifest.Main exists:       → Plugin
+ELSE IF has .class files:      → Plugin
+ELSE IF manifest exists:       → Pack
+ELSE IF location == "packs":   → Pack
+ELSE:                          → Unknown
+```
+
+### Storage Locations (Reality)
+| Type | Location | Formats |
+|------|----------|---------|
+| Packs | `UserData/Packs/` | Directories only |
+| Packs | `UserData/Mods/` | ZIP, directories |
+| Plugins | `UserData/Mods/` | JAR files |
+| Early Plugins | System-specific | JAR files |
+
+**Key Insight**: Both packs (.zip) and plugins (.jar) live in `UserData/Mods/`. The `UserData/Packs/` folder is legacy/directory-only.
+
+### Real Mod Examples (Analyzed)
+- **NoCube_Bags_0.0.2.zip** (Pack)
+  - 25KB, adds 3 bag items
+  - `Common/Icons/`, `Common/Items/`, `Server/Item/Items/`
+  - No `Main` field
+
+- **AdminUI-1.0.3.jar** (Plugin + Assets)
+  - 137KB, admin GUI pages
+  - `Main: "com.buuz135.adminui.AdminUI"`
+  - `IncludesAssetPack: true`
+  - Dependencies: `Hytale:AccessControlModule`
+
+- **Hybrid-1.4.jar** (Library Plugin)
+  - 68KB, shared library for other mods
+  - Event system, utility functions
+  - Minimal assets (just icon)
+
+### Hytale Built-in Modules
+Plugins can depend on these:
+- `Hytale:EntityModule` - Entity management
+- `Hytale:AssetModule` - Asset handling
+- `Hytale:AccessControlModule` - Permissions
 
 ## Renderer Modules (UI Sections)
 
