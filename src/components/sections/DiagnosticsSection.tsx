@@ -4,20 +4,19 @@ import { useAppContext } from '@/context/AppContext'
 
 export function DiagnosticsSection() {
   const { state } = useAppContext()
-  const { installInfo, scanResult } = state
+  const { installInfo } = state
 
   const installIssues = installInfo?.issues ?? []
-  const scanWarnings = scanResult?.warnings ?? []
 
   return (
     <>
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold">Diagnostics</h1>
         <p className="text-sm text-muted-foreground">
-          Review install health, scan warnings, and profile conflicts.
+          Review install health and profile conflicts.
         </p>
       </header>
-      <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+      <div className="grid gap-4 md:grid-cols-1">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Install health</CardTitle>
@@ -45,26 +44,6 @@ export function DiagnosticsSection() {
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">No install issues detected.</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Scan warnings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {scanWarnings.length ? (
-              <ul className="space-y-2 text-xs text-muted-foreground">
-                {scanWarnings.map((warning) => (
-                  <li key={warning} className="leading-relaxed">
-                    {warning}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {scanResult ? 'No scan warnings reported.' : 'Run a scan to see warnings.'}
-              </p>
             )}
           </CardContent>
         </Card>

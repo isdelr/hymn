@@ -39,7 +39,6 @@ const createFixtures = (): Fixtures => {
       enabled: true,
       dependencies: ['beta-plugin'],
       optionalDependencies: [],
-      warnings: ['Missing manifest'],
       entryPoint: null,
       includesAssetPack: true,
     },
@@ -56,7 +55,6 @@ const createFixtures = (): Fixtures => {
       enabled: false,
       dependencies: [],
       optionalDependencies: [],
-      warnings: [],
       entryPoint: null,
       includesAssetPack: false,
     },
@@ -73,7 +71,6 @@ const createFixtures = (): Fixtures => {
       enabled: true,
       dependencies: [],
       optionalDependencies: [],
-      warnings: [],
       entryPoint: null,
       includesAssetPack: false,
     },
@@ -112,7 +109,6 @@ const createFixtures = (): Fixtures => {
   const scanResult: ScanResult = {
     installPath: installInfo.activePath,
     entries,
-    warnings: ['Scan warning'],
   }
 
   return { entries, installInfo, profilesState, scanResult }
@@ -131,32 +127,26 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       profileId: fixtures.profilesState.activeProfileId ?? 'profile-1',
       snapshotId: 'snap-1',
       appliedAt: '2026-01-01T00:00:00Z',
-      warnings: ['Apply warning'],
     }),
     rollbackLastApply: vi.fn().mockResolvedValue({
       snapshotId: 'snap-2',
       restoredAt: '2026-01-01T00:00:00Z',
-      warnings: ['Rollback warning'],
     }),
     createPack: vi.fn().mockResolvedValue({
       success: true,
       path: 'C:\\Hytale\\packs\\TestPack',
       manifestPath: 'C:\\Hytale\\packs\\TestPack\\manifest.json',
-      warnings: [],
     }),
     getModManifest: vi.fn().mockResolvedValue({
       manifestPath: 'C:\\Hytale\\packs\\TestPack\\manifest.json',
       content: '{"Name":"TestPack"}',
-      warnings: [],
       readOnly: false,
     }),
     saveModManifest: vi.fn().mockResolvedValue({
       success: true,
-      warnings: [],
     }),
     listModAssets: vi.fn().mockResolvedValue({
       assets: [],
-      warnings: [],
     }),
     buildMod: vi.fn().mockResolvedValue({
       success: true,
@@ -167,11 +157,9 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     }),
     listServerAssets: vi.fn().mockResolvedValue({
       assets: [],
-      warnings: [],
     }),
     createServerAsset: vi.fn().mockResolvedValue({
       success: true,
-      warnings: [],
       asset: {
         id: 'Server/Item/Items/sample.json',
         name: 'sample.json',
@@ -183,7 +171,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     }),
     duplicateServerAsset: vi.fn().mockResolvedValue({
       success: true,
-      warnings: [],
       asset: {
         id: 'Server/Item/Items/sample-copy.json',
         name: 'sample-copy.json',
@@ -195,7 +182,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     }),
     moveServerAsset: vi.fn().mockResolvedValue({
       success: true,
-      warnings: [],
       asset: {
         id: 'Server/Item/Items/sample-moved.json',
         name: 'sample-moved.json',
@@ -208,14 +194,12 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     deleteServerAsset: vi.fn().mockResolvedValue({ success: true }),
     listVanillaAssets: vi.fn().mockResolvedValue({
       assets: [],
-      warnings: [],
       roots: ['C:\\Hytale\\install\\release\\package\\game\\latest\\Assets.zip'],
       hasMore: false,
       nextOffset: 0,
     }),
     importVanillaAsset: vi.fn().mockResolvedValue({
       success: true,
-      warnings: [],
       asset: {
         id: 'Server/Item/Items/vanilla.json',
         name: 'vanilla.json',
@@ -229,7 +213,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     restoreBackup: vi.fn().mockResolvedValue({
       snapshotId: 'backup-1',
       restoredAt: '2026-01-01T00:00:00Z',
-      warnings: [],
     }),
     deleteBackup: vi.fn().mockResolvedValue({ success: true }),
     exportModpack: vi.fn().mockResolvedValue({
@@ -241,9 +224,39 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       success: true,
       profileId: 'imported-profile',
       modCount: 2,
-      warnings: [],
     }),
     openInExplorer: vi.fn().mockResolvedValue(undefined),
+    // World management methods
+    getWorlds: vi.fn().mockResolvedValue({
+      worlds: [
+        {
+          id: 'TestWorld',
+          name: 'TestWorld',
+          path: 'C:\\Hytale\\UserData\\Saves\\TestWorld',
+          configPath: 'C:\\Hytale\\UserData\\Saves\\TestWorld\\config.json',
+          previewPath: null,
+          previewDataUrl: null,
+          lastModified: '2026-01-01T00:00:00Z',
+        },
+      ],
+      selectedWorldId: 'TestWorld',
+    }),
+    getWorldConfig: vi.fn().mockResolvedValue({
+      Mods: {},
+    }),
+    setModEnabled: vi.fn().mockResolvedValue({
+      success: true,
+    }),
+    setSelectedWorld: vi.fn().mockResolvedValue(undefined),
+    // Mod management methods
+    deleteMod: vi.fn().mockResolvedValue({
+      success: true,
+      backupPath: 'C:\\Users\\test\\AppData\\hymn\\deleted-mods\\TestMod_2026-01-01',
+    }),
+    addMods: vi.fn().mockResolvedValue({
+      success: true,
+      addedPaths: ['C:\\Hytale\\UserData\\Mods\\TestMod.zip'],
+    }),
   }
 
   const merged = { ...api, ...overrides } as HymnApi

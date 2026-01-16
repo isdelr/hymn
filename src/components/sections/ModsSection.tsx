@@ -1,9 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
-  Check,
-  CircleDot,
-  Lock,
   Package,
   Plus,
   RefreshCw,
@@ -12,13 +9,31 @@ import {
   Archive,
   Puzzle,
   Zap,
+  Trash2,
+  Globe,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useAppContext } from '@/context/AppContext'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
 import { cn } from '@/lib/utils'
@@ -70,24 +85,21 @@ export function ModsSection() {
   const {
     state,
     actions,
-    activeProfile,
+    selectedWorld,
     enabledModIds,
-    warnings,
-    profileWarnings,
   } = useAppContext()
   const {
     installInfo,
     scanResult,
+    worldsState,
     isScanning,
     errorMessage,
-    profilesState,
-    profileError,
-    isSwitchingProfile,
+    worldError,
+    isTogglingMod,
   } = state
 
   const [filter, setFilter] = useState('')
-  const [isCreatingProfile, setIsCreatingProfile] = useState(false)
-  const [newProfileName, setNewProfileName] = useState('')
+  const [modToDelete, setModToDelete] = useState<ModEntry | null>(null)
 
   const visibleEntries = useMemo(() => {
     const entries = scanResult?.entries ?? []
@@ -100,105 +112,65 @@ export function ModsSection() {
     })
   }, [filter, scanResult])
 
-  const handleCreateProfile = async () => {
-    if (!newProfileName.trim()) return
-    await actions.handleCreateProfile(newProfileName.trim())
-    setNewProfileName('')
-    setIsCreatingProfile(false)
+  const handleDeleteMod = async () => {
+    if (!modToDelete) return
+    await actions.handleDeleteMod(modToDelete)
+    setModToDelete(null)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleCreateProfile()
-    } else if (e.key === 'Escape') {
-      setIsCreatingProfile(false)
-      setNewProfileName('')
-    }
-  }
-
-  const totalWarnings = warnings.length + profileWarnings.length
+  const worlds = worldsState?.worlds ?? []
+  const hasWorlds = worlds.length > 0
 
   return (
     <div className="space-y-5">
-      {/* Profile Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
-        {profilesState?.profiles.map((profile) => {
-          const isActive = profile.id === profilesState.activeProfileId
-          const isDefault = profile.readonly
-          return (
-            <button
-              key={profile.id}
-              onClick={() => actions.handleActivateProfile(profile.id)}
-              disabled={isSwitchingProfile || isScanning}
-              className={cn(
-                'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
-                isActive
-                  ? isDefault
-                    ? 'bg-amber-500/20 text-amber-300 shadow-lg shadow-amber-500/10'
-                    : 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
-                  : 'bg-muted/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                (isSwitchingProfile || isScanning) && 'opacity-50 cursor-wait'
-              )}
-            >
-              {isDefault && <Lock className="h-3 w-3" />}
-              {profile.name}
-            </button>
-          )
-        })}
-
-        {/* Create New Profile */}
-        {isCreatingProfile ? (
-          <div className="flex items-center gap-2">
-            <Input
-              value={newProfileName}
-              onChange={(e) => setNewProfileName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={() => {
-                if (!newProfileName.trim()) {
-                  setIsCreatingProfile(false)
-                }
-              }}
-              placeholder="Profile name..."
-              className="h-9 w-40 text-sm bg-muted/40 border-border/50"
-              autoFocus
-            />
-            <button
-              onClick={handleCreateProfile}
-              disabled={!newProfileName.trim()}
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Check className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => {
-                setIsCreatingProfile(false)
-                setNewProfileName('')
-              }}
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setIsCreatingProfile(true)}
-            disabled={isSwitchingProfile || isScanning}
-            className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors',
-              (isSwitchingProfile || isScanning) && 'opacity-50 cursor-wait'
-            )}
-            title="Create new profile"
+      {/* World Selector */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Globe className="h-4 w-4" />
+          <span>Managing mods for:</span>
+        </div>
+        {hasWorlds ? (
+          <Select
+            value={selectedWorld?.id ?? ''}
+            onValueChange={(worldId) => actions.handleSelectWorld(worldId)}
+            disabled={isScanning || isTogglingMod}
           >
-            <Plus className="h-4 w-4" />
-          </button>
+            <SelectTrigger className="w-[220px] h-10 bg-muted/30 border-border/50">
+              <SelectValue placeholder="Select a world..." />
+            </SelectTrigger>
+            <SelectContent>
+              {worlds.map((world) => (
+                <SelectItem key={world.id} value={world.id}>
+                  <div className="flex items-center gap-2">
+                    {world.previewDataUrl ? (
+                      <img
+                        src={world.previewDataUrl}
+                        alt=""
+                        className="w-6 h-6 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="w-6 h-6 rounded bg-muted flex items-center justify-center">
+                        <Globe className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    )}
+                    <span>{world.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div className="text-sm text-muted-foreground italic">
+            No worlds found. Create a world in Hytale first.
+          </div>
         )}
       </div>
 
       {/* Error message */}
-      {profileError && (
+      {worldError && (
         <div className="flex items-center gap-3 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3">
           <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-          <p className="text-sm text-destructive">{profileError}</p>
+          <p className="text-sm text-destructive">{worldError}</p>
         </div>
       )}
 
@@ -224,8 +196,18 @@ export function ModsSection() {
         <Button
           variant="outline"
           size="default"
+          onClick={actions.handleAddMods}
+          disabled={isScanning || isTogglingMod || !installInfo?.activePath}
+          className="h-10 gap-2 border-border/50"
+        >
+          <Plus className="h-4 w-4" />
+          Add Mods
+        </Button>
+        <Button
+          variant="outline"
+          size="default"
           onClick={actions.runScan}
-          disabled={isScanning || isSwitchingProfile || !installInfo?.activePath}
+          disabled={isScanning || isTogglingMod || !installInfo?.activePath}
           className="h-10 gap-2 border-border/50"
         >
           <RefreshCw className={cn('h-4 w-4', isScanning && 'animate-spin')} />
@@ -241,6 +223,14 @@ export function ModsSection() {
         </div>
       )}
 
+      {/* No World Selected Warning */}
+      {!selectedWorld && hasWorlds && (
+        <div className="flex items-center gap-3 rounded-xl bg-warning/10 border border-warning/20 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+          <p className="text-sm text-warning">Please select a world to manage mods.</p>
+        </div>
+      )}
+
       {/* Mods Grid */}
       {visibleEntries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border/50 bg-muted/20 py-20">
@@ -252,7 +242,7 @@ export function ModsSection() {
             {filter
               ? 'No mods match your search. Try different keywords.'
               : installInfo?.activePath
-              ? 'Add mods to your Packs or Mods folder and click Rescan.'
+              ? 'Click "Add Mods" to import mods, or add them to your Mods folder and click Rescan.'
               : 'Select your Hytale folder to get started.'}
           </p>
           {filter && (
@@ -264,11 +254,10 @@ export function ModsSection() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visibleEntries.map((entry) => {
-            const isEnabled = activeProfile ? enabledModIds.has(entry.id) : entry.enabled
-            const hasWarnings = entry.warnings.length > 0
+            const isEnabled = enabledModIds.has(entry.id)
             const colors = getModColors(entry.type)
             const ModIcon = getModIcon(entry.type)
-            const isReadonly = activeProfile?.readonly
+            const canToggle = !!selectedWorld && !isTogglingMod
 
             return (
               <div
@@ -294,47 +283,52 @@ export function ModsSection() {
 
                     {/* Content */}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="truncate font-medium leading-tight">{entry.name}</h3>
-                        {hasWarnings && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-warning/20">
-                                <AlertTriangle className="h-3 w-3 text-warning" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs">
-                              <ul className="space-y-1 text-xs">
-                                {entry.warnings.map((warning, i) => (
-                                  <li key={i}>{warning}</li>
-                                ))}
-                              </ul>
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
+                      <h3 className="truncate font-medium leading-tight">{entry.name}</h3>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.id}</p>
                     </div>
 
-                    {/* Toggle */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <Switch
-                            checked={isEnabled}
-                            disabled={!activeProfile || isReadonly || isSwitchingProfile}
-                            onCheckedChange={(checked) => actions.handleToggleMod(entry, checked)}
-                            aria-label={`Toggle ${entry.name}`}
-                            className="shrink-0"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      {isReadonly && (
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      {/* Delete Button */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => setModToDelete(entry)}
+                            disabled={isTogglingMod}
+                            className={cn(
+                              'flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors',
+                              'opacity-0 group-hover:opacity-100',
+                              isTogglingMod && 'cursor-not-allowed opacity-50'
+                            )}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
                         <TooltipContent side="top">
-                          <p className="text-xs">Create a new profile to modify mods</p>
+                          <p className="text-xs">Delete mod</p>
                         </TooltipContent>
-                      )}
-                    </Tooltip>
+                      </Tooltip>
+
+                      {/* Toggle */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div>
+                            <Switch
+                              checked={isEnabled}
+                              disabled={!canToggle}
+                              onCheckedChange={(checked) => actions.handleToggleMod(entry, checked)}
+                              aria-label={`Toggle ${entry.name}`}
+                              className="shrink-0"
+                            />
+                          </div>
+                        </TooltipTrigger>
+                        {!selectedWorld && (
+                          <TooltipContent side="top">
+                            <p className="text-xs">Select a world to toggle mods</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </div>
                   </div>
 
                   {/* Footer */}
@@ -365,29 +359,27 @@ export function ModsSection() {
         </div>
       )}
 
-      {/* Warnings Panel */}
-      {totalWarnings > 0 && (
-        <div className="rounded-xl border border-warning/30 bg-gradient-to-r from-warning/5 to-transparent p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-warning/20">
-              <AlertTriangle className="h-3.5 w-3.5 text-warning" />
-            </div>
-            <span className="text-sm font-medium text-warning">
-              {totalWarnings} Warning{totalWarnings !== 1 && 's'}
-            </span>
-          </div>
-          <ScrollArea className="max-h-28">
-            <ul className="space-y-1.5">
-              {[...warnings, ...profileWarnings].map((warning, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <CircleDot className="mt-0.5 h-3 w-3 shrink-0 text-warning/50" />
-                  {warning}
-                </li>
-              ))}
-            </ul>
-          </ScrollArea>
-        </div>
-      )}
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!modToDelete} onOpenChange={(open) => !open && setModToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Mod Permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{modToDelete?.name}" from your Hytale installation.
+              A backup will be created in Hymn's data folder, but this action cannot be easily undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteMod}
+            >
+              Delete Permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -10,7 +10,8 @@
       "Bash(bun run build)",
       "Bash(npm run build:*)",
       "Bash(dir \"C:\\\\Users\\\\isaia\\\\OneDrive\\\\Desktop\\\\example mods\" /b)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(ls:*)"
     ]
   }
 }

@@ -55,6 +55,15 @@ import type {
   VanillaAssetEntry,
   VanillaAssetListOptions,
   VanillaAssetListResult,
+  // World management types
+  WorldInfo,
+  WorldConfig,
+  WorldsState,
+  SetModEnabledOptions,
+  SetModEnabledResult,
+  DeleteModOptions,
+  DeleteModResult,
+  AddModResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -80,12 +89,10 @@ const SETTINGS_KEYS = {
   activeProfile: 'active_profile_id',
   profilesSeeded: 'profiles_seeded',
   lastSnapshot: 'last_snapshot_id',
+  selectedWorld: 'selected_world_id',
 }
-const LOCATION_LABELS: Record<ModLocation, string> = {
-  mods: 'Mods',
-  packs: 'Packs',
-  earlyplugins: 'Early plugins',
-}
+const DELETED_MODS_FOLDER = 'deleted-mods'
+
 
 type DatabaseInstance = Client
 
@@ -627,17 +634,298 @@ async function syncActiveWorldModConfig(
   userDataPath: string | null,
   enabledSet: Set<string>,
   entries: ModEntry[],
-  warnings: string[],
 ) {
   const configPath = await getActiveWorldConfigPath(userDataPath)
   if (!configPath) return
   try {
     await updateWorldModConfig(configPath, enabledSet, entries)
   } catch {
-    const worldName = path.basename(path.dirname(configPath))
-    warnings.push(`Failed to sync mod settings for world ${worldName}.`)
+    // Failed to sync mod settings
   }
 }
+
+// ============================================================================
+// WORLD MANAGEMENT FUNCTIONS
+// ============================================================================
+
+function getDeletedModsRoot() {
+  return path.join(app.getPath('userData'), DELETED_MODS_FOLDER)
+}
+
+async function getWorlds(): Promise<WorldsState> {
+  const info = await resolveInstallInfo()
+  if (!info.userDataPath) {
+    return { worlds: [], selectedWorldId: null }
+  }
+
+  const savesPath = path.join(info.userDataPath, 'Saves')
+  if (!(await pathExists(savesPath))) {
+    return { worlds: [], selectedWorldId: null }
+  }
+
+  const entries = await fs.readdir(savesPath, { withFileTypes: true })
+  const worlds: WorldInfo[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const worldPath = path.join(savesPath, entry.name)
+    const configPath = path.join(worldPath, 'config.json')
+    const previewPath = path.join(worldPath, 'preview.png')
+
+    if (!(await pathExists(configPath))) continue // Only include valid worlds
+
+    const stat = await fs.stat(worldPath)
+    let previewDataUrl: string | null = null
+
+    if (await pathExists(previewPath)) {
+      try {
+        const previewBuffer = await fs.readFile(previewPath)
+        previewDataUrl = `data:image/png;base64,${previewBuffer.toString('base64')}`
+      } catch {
+        // Ignore preview read errors
+      }
+    }
+
+    worlds.push({
+      id: entry.name,
+      name: entry.name,
+      path: worldPath,
+      configPath,
+      previewPath: (await pathExists(previewPath)) ? previewPath : null,
+      previewDataUrl,
+      lastModified: stat.mtime.toISOString(),
+    })
+  }
+
+  // Sort by last modified (most recent first)
+  worlds.sort((a, b) => b.lastModified.localeCompare(a.lastModified))
+
+  // Get persisted selected world or default to most recent
+  const selectedWorldId = (await readSetting(SETTINGS_KEYS.selectedWorld)) ?? (worlds.length > 0 ? worlds[0].id : null)
+
+  return { worlds, selectedWorldId }
+}
+
+async function getWorldConfig(worldId: string): Promise<WorldConfig | null> {
+  const info = await resolveInstallInfo()
+  if (!info.userDataPath) return null
+
+  const configPath = path.join(info.userDataPath, 'Saves', worldId, 'config.json')
+
+  // Safety: Verify path is within expected location
+  const savesRoot = path.join(info.userDataPath, 'Saves')
+  if (!isWithinPath(configPath, savesRoot)) {
+    throw new Error('Invalid world path detected.')
+  }
+
+  if (!(await pathExists(configPath))) return null
+
+  try {
+    const content = await fs.readFile(configPath, 'utf-8')
+    return JSON.parse(content) as WorldConfig
+  } catch {
+    return null
+  }
+}
+
+async function setModEnabled(options: SetModEnabledOptions): Promise<SetModEnabledResult> {
+  const info = await resolveInstallInfo()
+
+  if (!info.userDataPath) {
+    throw new Error('Hytale UserData path not found.')
+  }
+
+  const configPath = path.join(info.userDataPath, 'Saves', options.worldId, 'config.json')
+
+  // Safety: Verify path is within expected location
+  const savesRoot = path.join(info.userDataPath, 'Saves')
+  if (!isWithinPath(configPath, savesRoot)) {
+    throw new Error('Invalid world path detected.')
+  }
+
+  if (!(await pathExists(configPath))) {
+    throw new Error('World config.json not found.')
+  }
+
+  let config: WorldConfig = {}
+  try {
+    const content = await fs.readFile(configPath, 'utf-8')
+    config = JSON.parse(content) as WorldConfig
+  } catch {
+    // Could not read existing config, creating new Mods section
+  }
+
+  // Initialize Mods section if needed
+  if (!config.Mods || typeof config.Mods !== 'object') {
+    config.Mods = {}
+  }
+
+  // Initialize mod entry if needed
+  if (!config.Mods[options.modId] || typeof config.Mods[options.modId] !== 'object') {
+    config.Mods[options.modId] = { Enabled: options.enabled }
+  } else {
+    config.Mods[options.modId].Enabled = options.enabled
+  }
+
+  // Write back to file
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
+
+  return { success: true }
+}
+
+async function setSelectedWorld(worldId: string): Promise<void> {
+  await writeSetting(SETTINGS_KEYS.selectedWorld, worldId)
+}
+
+async function deleteMod(options: DeleteModOptions): Promise<DeleteModResult> {
+  const info = await resolveInstallInfo()
+
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  // Safety: Verify mod path is within allowed locations
+  const allowedRoots = [info.modsPath, info.packsPath, info.earlyPluginsPath, getDisabledRoot()].filter(
+    Boolean,
+  ) as string[]
+
+  const isWithinAllowed = allowedRoots.some((root) => isWithinPath(options.modPath, root))
+  if (!isWithinAllowed) {
+    throw new Error('Cannot delete mod: path is outside allowed mod folders.')
+  }
+
+  // Verify file/folder exists
+  if (!(await pathExists(options.modPath))) {
+    throw new Error('Mod not found at specified path.')
+  }
+
+  // Create backup before deletion
+  const backupRoot = getDeletedModsRoot()
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupPath = path.join(backupRoot, `${path.basename(options.modPath)}_${timestamp}`)
+
+  await ensureDir(backupRoot)
+  await copyPath(options.modPath, backupPath)
+
+  // Delete the mod
+  await removePath(options.modPath)
+
+  return { success: true, backupPath }
+}
+
+async function addMods(): Promise<AddModResult> {
+  const info = await resolveInstallInfo()
+
+  if (!info.modsPath) {
+    throw new Error('Mods folder not found.')
+  }
+
+  // Open file dialog for mod selection
+  const result = await dialog.showOpenDialog({
+    title: 'Add Mods',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Mod Files', extensions: ['zip', 'jar'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    throw new Error('Import cancelled.')
+  }
+
+  const skippedMods: string[] = []
+  const addedPaths: string[] = []
+
+  await ensureDir(info.modsPath)
+
+  for (const sourcePath of result.filePaths) {
+    const baseName = path.basename(sourcePath)
+    const destPath = path.join(info.modsPath, baseName)
+
+    // Safety: Check for overwrites
+    if (await pathExists(destPath)) {
+      skippedMods.push(`Skipped ${baseName}: already exists in Mods folder.`)
+      continue
+    }
+
+    await copyPath(sourcePath, destPath)
+    addedPaths.push(destPath)
+  }
+
+  if (addedPaths.length === 0 && skippedMods.length > 0) {
+    throw new Error('No mods were added. ' + skippedMods.join(' '))
+  }
+
+  return { success: true, addedPaths }
+}
+
+async function scanModsWithWorld(worldId?: string): Promise<ScanResult> {
+  const info = await resolveInstallInfo()
+
+  if (!info.activePath) {
+    return { installPath: null, entries: [] }
+  }
+
+  const entries: ModEntry[] = []
+  const disabledRoot = getDisabledRoot()
+  const disabledPaths = {
+    packs: path.join(disabledRoot, 'packs'),
+    mods: path.join(disabledRoot, 'mods'),
+    earlyplugins: path.join(disabledRoot, 'earlyplugins'),
+  }
+
+  // Get world overrides - either from specified world or active world
+  let worldOverrides: Map<string, boolean> | null = null
+  if (worldId && info.userDataPath) {
+    const config = await getWorldConfig(worldId)
+    if (config?.Mods) {
+      worldOverrides = new Map()
+      for (const [modId, modConfig] of Object.entries(config.Mods)) {
+        if (typeof modConfig?.Enabled === 'boolean') {
+          worldOverrides.set(modId, modConfig.Enabled)
+        }
+      }
+    }
+  } else {
+    worldOverrides = await readActiveWorldModOverrides(info.userDataPath)
+  }
+
+  if (info.packsPath) {
+    entries.push(...(await scanPacksFolder(info.packsPath, undefined, worldOverrides ?? undefined)))
+  }
+
+  if (await pathExists(disabledPaths.packs)) {
+    entries.push(...(await scanPacksFolder(disabledPaths.packs, false, worldOverrides ?? undefined)))
+  }
+
+  if (info.modsPath) {
+    entries.push(...(await scanModsFolder(info.modsPath, undefined, worldOverrides ?? undefined)))
+  }
+
+  if (await pathExists(disabledPaths.mods)) {
+    entries.push(...(await scanModsFolder(disabledPaths.mods, false, worldOverrides ?? undefined)))
+  }
+
+  if (info.earlyPluginsPath) {
+    entries.push(...(await scanEarlyPluginsFolder(info.earlyPluginsPath, undefined, worldOverrides ?? undefined)))
+  }
+
+  if (await pathExists(disabledPaths.earlyplugins)) {
+    entries.push(...(await scanEarlyPluginsFolder(disabledPaths.earlyplugins, false, worldOverrides ?? undefined)))
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name))
+
+  await seedProfilesFromScan(entries)
+  await syncDefaultProfileFromScan(entries)
+
+  return { installPath: info.activePath, entries }
+}
+
+// ============================================================================
+// END WORLD MANAGEMENT FUNCTIONS
+// ============================================================================
 
 async function readManifestFromFolder(folderPath: string) {
   const rootManifest = path.join(folderPath, 'manifest.json')
@@ -703,14 +991,12 @@ const vanillaZipState: {
   entries: VanillaAssetEntry[]
   isComplete: boolean
   isReading: Promise<void> | null
-  warnings: string[]
 } = {
   zipPath: null,
   zipfile: null,
   entries: [],
   isComplete: false,
   isReading: null,
-  warnings: [],
 }
 
 const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, label: string) => Record<string, unknown>> = {
@@ -845,7 +1131,6 @@ function getCandidateAssetRoots(rootPath: string, entries: string[]) {
 
 async function listAssetsFromDirectory(options: ModAssetsOptions): Promise<ModAssetsResult> {
   const assets: ModAsset[] = []
-  const warnings: string[] = []
   const maxAssets = options.maxAssets ?? DEFAULT_MAX_ASSETS
   const includePreviews = options.includePreviews !== false
   const maxPreviews = options.maxPreviews ?? DEFAULT_MAX_PREVIEWS
@@ -853,14 +1138,14 @@ async function listAssetsFromDirectory(options: ModAssetsOptions): Promise<ModAs
   let previewCount = 0
 
   if (!(await pathExists(options.path))) {
-    return { assets, warnings: ['Mod folder not found.'] }
+    return { assets }
   }
 
   let rootEntries: string[] = []
   try {
     rootEntries = await fs.readdir(options.path)
   } catch {
-    return { assets, warnings: ['Unable to read mod folder.'] }
+    return { assets }
   }
 
   const roots = getCandidateAssetRoots(options.path, rootEntries)
@@ -894,7 +1179,7 @@ async function listAssetsFromDirectory(options: ModAssetsOptions): Promise<ModAs
           previewCount += 1
         }
       } catch {
-        warnings.push(`Failed to read ${relativePath}.`)
+        // Failed to read asset
       }
       assets.push(
         createAssetEntry({
@@ -914,15 +1199,14 @@ async function listAssetsFromDirectory(options: ModAssetsOptions): Promise<ModAs
   }
 
   if (assets.length >= maxAssets) {
-    warnings.push(`Asset list capped at ${maxAssets} items.`)
+    // Asset list capped
   }
 
-  return { assets, warnings }
+  return { assets }
 }
 
 async function listAssetsFromArchive(options: ModAssetsOptions): Promise<ModAssetsResult> {
   const assets: ModAsset[] = []
-  const warnings: string[] = []
   const maxAssets = options.maxAssets ?? DEFAULT_MAX_ASSETS
   const includePreviews = options.includePreviews !== false
   const maxPreviews = options.maxPreviews ?? DEFAULT_MAX_PREVIEWS
@@ -930,7 +1214,7 @@ async function listAssetsFromArchive(options: ModAssetsOptions): Promise<ModAsse
   let previewCount = 0
 
   if (!(await pathExists(options.path))) {
-    return { assets, warnings: ['Mod archive not found.'] }
+    return { assets }
   }
 
   const data = await fs.readFile(options.path)
@@ -971,10 +1255,10 @@ async function listAssetsFromArchive(options: ModAssetsOptions): Promise<ModAsse
   }
 
   if (assets.length >= maxAssets) {
-    warnings.push(`Asset list capped at ${maxAssets} items.`)
+    // Asset list capped
   }
 
-  return { assets, warnings }
+  return { assets }
 }
 
 async function listModAssets(options: ModAssetsOptions): Promise<ModAssetsResult> {
@@ -985,21 +1269,18 @@ async function listModAssets(options: ModAssetsOptions): Promise<ModAssetsResult
 }
 
 async function getModManifest(options: ModManifestOptions): Promise<ModManifestResult> {
-  const warnings: string[] = []
   if (options.format !== 'directory') {
     const result = await readManifestFromArchive(options.path)
     if (!result.manifest) {
       return {
         manifestPath: result.manifestPath,
         content: null,
-        warnings: ['manifest.json not found in archive.'],
         readOnly: true,
       }
     }
     return {
       manifestPath: result.manifestPath,
       content: JSON.stringify(result.manifest, null, 2),
-      warnings,
       readOnly: true,
     }
   }
@@ -1008,7 +1289,6 @@ async function getModManifest(options: ModManifestOptions): Promise<ModManifestR
     return {
       manifestPath: null,
       content: null,
-      warnings: ['Mod folder not found.'],
       readOnly: false,
     }
   }
@@ -1021,20 +1301,18 @@ async function getModManifest(options: ModManifestOptions): Promise<ModManifestR
       return {
         manifestPath,
         content,
-        warnings,
         readOnly: false,
       }
     }
   } catch {
-    warnings.push('Failed to read manifest.json.')
+    // Failed to read manifest
   }
 
-  warnings.push('manifest.json not found; saving will create a new file.')
+
 
   return {
     manifestPath,
     content: null,
-    warnings,
     readOnly: false,
   }
 }
@@ -1048,7 +1326,7 @@ async function saveModManifest(options: SaveManifestOptions): Promise<SaveManife
     throw new Error('Mod folder not found.')
   }
 
-  const warnings: string[] = []
+
   let parsed: Record<string, unknown>
   try {
     parsed = JSON.parse(options.content) as Record<string, unknown>
@@ -1060,7 +1338,7 @@ async function saveModManifest(options: SaveManifestOptions): Promise<SaveManife
   await ensureDir(path.dirname(manifestPath))
   await fs.writeFile(manifestPath, JSON.stringify(parsed, null, 2), 'utf-8')
 
-  return { success: true, warnings }
+  return { success: true }
 }
 
 async function runCommand(command: string, args: string[], cwd: string) {
@@ -1139,21 +1417,21 @@ async function buildMod(options: ModBuildOptions): Promise<ModBuildResult> {
 
 async function listServerAssets(options: ServerAssetListOptions): Promise<ServerAssetListResult> {
   const assets: ServerAsset[] = []
-  const warnings: string[] = []
+
   const maxAssets = options.maxAssets ?? DEFAULT_MAX_SERVER_ASSETS
 
   if (!(await pathExists(options.path))) {
-    return { assets, warnings: ['Mod folder not found.'] }
+    return { assets }
   }
 
   const stat = await fs.stat(options.path)
   if (!stat.isDirectory()) {
-    return { assets, warnings: ['Mod path must be a folder.'] }
+    return { assets }
   }
 
   const serverRoot = path.join(options.path, 'Server')
   if (!(await pathExists(serverRoot))) {
-    return { assets, warnings: ['Server folder not found.'] }
+    return { assets }
   }
 
   const visitDirectory = async (directory: string) => {
@@ -1161,7 +1439,6 @@ async function listServerAssets(options: ServerAssetListOptions): Promise<Server
     try {
       entries = await fs.readdir(directory, { withFileTypes: true })
     } catch {
-      warnings.push(`Unable to read ${normalizeRelativePath(path.relative(options.path, directory))}.`)
       return
     }
     for (const entry of entries) {
@@ -1178,7 +1455,7 @@ async function listServerAssets(options: ServerAssetListOptions): Promise<Server
         const asset = await buildServerAssetEntry(options.path, fullPath)
         assets.push(asset)
       } catch {
-        warnings.push(`Failed to read ${normalizeRelativePath(path.relative(options.path, fullPath))}.`)
+        // Failed to read asset
       }
     }
   }
@@ -1186,16 +1463,16 @@ async function listServerAssets(options: ServerAssetListOptions): Promise<Server
   await visitDirectory(serverRoot)
 
   if (assets.length >= maxAssets) {
-    warnings.push(`Server asset list capped at ${maxAssets} files.`)
+    // Server asset list capped
   }
 
   assets.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
 
-  return { assets, warnings }
+  return { assets }
 }
 
 async function createServerAsset(options: CreateServerAssetOptions): Promise<ServerAssetMutationResult> {
-  const warnings: string[] = []
+
 
   if (!(await pathExists(options.path))) {
     throw new Error('Mod folder not found.')
@@ -1220,7 +1497,7 @@ async function createServerAsset(options: CreateServerAssetOptions): Promise<Ser
   const rawFileName = trimmedName.toLowerCase().endsWith('.json') ? trimmedName : `${trimmedName}.json`
   const fileName = rawFileName.replace(/[<>:"\\|?*]/g, '_')
   if (fileName !== rawFileName) {
-    warnings.push('Invalid filename characters were replaced with underscores.')
+    // Invalid characters replaced
   }
 
   const filePath = path.join(destinationPath, fileName)
@@ -1241,11 +1518,11 @@ async function createServerAsset(options: CreateServerAssetOptions): Promise<Ser
 
   const asset = await buildServerAssetEntry(options.path, filePath)
 
-  return { success: true, asset, warnings }
+  return { success: true, asset }
 }
 
 async function duplicateServerAsset(options: DuplicateServerAssetOptions): Promise<ServerAssetMutationResult> {
-  const warnings: string[] = []
+
   const stat = await fs.stat(options.path)
   if (!stat.isDirectory()) {
     throw new Error('Mod path must be a folder.')
@@ -1268,11 +1545,11 @@ async function duplicateServerAsset(options: DuplicateServerAssetOptions): Promi
 
   const asset = await buildServerAssetEntry(options.path, destinationPath)
 
-  return { success: true, asset, warnings }
+  return { success: true, asset }
 }
 
 async function moveServerAsset(options: MoveServerAssetOptions): Promise<ServerAssetMutationResult> {
-  const warnings: string[] = []
+
   const stat = await fs.stat(options.path)
   if (!stat.isDirectory()) {
     throw new Error('Mod path must be a folder.')
@@ -1295,7 +1572,7 @@ async function moveServerAsset(options: MoveServerAssetOptions): Promise<ServerA
 
   const asset = await buildServerAssetEntry(options.path, destinationPath)
 
-  return { success: true, asset, warnings }
+  return { success: true, asset }
 }
 
 async function deleteServerAsset(options: DeleteServerAssetOptions): Promise<DeleteServerAssetResult> {
@@ -1409,7 +1686,6 @@ function resetVanillaZipState(zipPath: string) {
   vanillaZipState.entries = []
   vanillaZipState.isComplete = false
   vanillaZipState.isReading = null
-  vanillaZipState.warnings = []
 }
 
 async function openZipFile(zipPath: string) {
@@ -1484,7 +1760,6 @@ async function ensureVanillaZipEntries(zipPath: string, targetCount: number, max
     while (vanillaZipState.entries.length < targetCount && !vanillaZipState.isComplete) {
       if (vanillaZipState.entries.length >= maxAssets) {
         vanillaZipState.isComplete = true
-        vanillaZipState.warnings.push(`Vanilla asset list capped at ${maxAssets} files.`)
         break
       }
 
@@ -1531,7 +1806,7 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
     throw new Error('Hytale install path not configured.')
   }
 
-  const warnings: string[] = []
+
   const maxAssets = options.maxAssets ?? DEFAULT_MAX_VANILLA_ASSETS
   const maxRoots = options.maxRoots ?? DEFAULT_MAX_VANILLA_ROOTS
   const offset = Math.max(options.offset ?? 0, 0)
@@ -1549,14 +1824,13 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
     }
     await ensureVanillaZipEntries(assetsZipPath, targetCount, maxAssets)
     if (vanillaZipState.entries.length === 0 && vanillaZipState.isComplete) {
-      vanillaZipState.warnings.push('Assets.zip contained no files.')
+      // Assets.zip contained no files
     }
     const slice = vanillaZipState.entries.slice(offset, offset + limit)
     const nextOffset = offset + slice.length
     const hasMore = nextOffset < vanillaZipState.entries.length || !vanillaZipState.isComplete
     return {
       assets: slice,
-      warnings: vanillaZipState.warnings,
       roots: [assetsZipPath],
       hasMore,
       nextOffset,
@@ -1565,8 +1839,7 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
 
   const roots = await findVanillaAssetRoots(info.activePath, maxRoots)
   if (roots.length === 0) {
-    warnings.push('No vanilla asset folders detected under the install path.')
-    return { assets, warnings, roots, hasMore: false, nextOffset: offset }
+    return { assets, roots, hasMore: false, nextOffset: offset }
   }
 
   const visitDirectory = async (root: string, directory: string) => {
@@ -1599,7 +1872,7 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
           size: stat.size,
         })
       } catch {
-        warnings.push(`Failed to read ${entry.name}.`)
+        // Failed to read asset
       }
     }
   }
@@ -1610,7 +1883,7 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
   }
 
   if (assets.length >= maxAssets) {
-    warnings.push(`Vanilla asset list capped at ${maxAssets} files.`)
+    // Vanilla asset list capped
   }
 
   assets.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
@@ -1619,7 +1892,7 @@ async function listVanillaAssets(options: VanillaAssetListOptions): Promise<Vani
   const nextOffset = offset + slicedAssets.length
   const hasMore = nextOffset < assets.length
 
-  return { assets: slicedAssets, warnings, roots, hasMore, nextOffset }
+  return { assets: slicedAssets, roots, hasMore, nextOffset }
 }
 
 async function extractZipEntry(archivePath: string, entryPath: string, destinationPath: string) {
@@ -1685,7 +1958,7 @@ async function extractZipEntry(archivePath: string, entryPath: string, destinati
 }
 
 async function importVanillaAsset(options: ImportVanillaAssetOptions): Promise<ImportVanillaAssetResult> {
-  const warnings: string[] = []
+
 
   if (!(await pathExists(options.destinationPath))) {
     throw new Error('Destination mod folder not found.')
@@ -1729,7 +2002,7 @@ async function importVanillaAsset(options: ImportVanillaAssetOptions): Promise<I
 
   const asset = await buildServerAssetEntry(options.destinationPath, destinationPath)
 
-  return { success: true, asset, warnings }
+  return { success: true, asset }
 }
 
 function resolveModType(options: {
@@ -1756,24 +2029,19 @@ function resolveModType(options: {
   return 'unknown'
 }
 
-function readManifestDependencies(value: unknown, label: string, warnings: string[]) {
+function readManifestDependencies(value: unknown) {
   if (value == null) {
     return []
   }
   // Handle array format: ["mod1", "mod2"]
   if (Array.isArray(value)) {
-    const values = value.filter((item) => typeof item === 'string')
-    if (values.length !== value.length) {
-      warnings.push(`${label} contains non-string entries.`)
-    }
-    return values
+    return value.filter((item) => typeof item === 'string')
   }
   // Handle object format: { "mod1": ">=1.0.0", "mod2": "*" } or empty {}
   if (typeof value === 'object' && value !== null) {
     const keys = Object.keys(value as Record<string, unknown>)
     return keys
   }
-  warnings.push(`${label} should be an array or object.`)
   return []
 }
 
@@ -1786,53 +2054,34 @@ function createModEntry(params: {
   hasClasses?: boolean
   enabledOverride?: boolean
   enabledOverrides?: Map<string, boolean>
-  warnings?: string[]
 }): ModEntry {
-  const entryWarnings = [...(params.warnings ?? [])]
   const name = typeof params.manifest?.Name === 'string' ? params.manifest.Name : params.fallbackName
   const group = typeof params.manifest?.Group === 'string' ? params.manifest.Group : undefined
   const version = typeof params.manifest?.Version === 'string' ? params.manifest.Version : undefined
   const description = typeof params.manifest?.Description === 'string' ? params.manifest.Description : undefined
   let entryPoint: string | null = null
+
   if (params.manifest?.Main !== undefined) {
     if (typeof params.manifest.Main === 'string') {
       entryPoint = params.manifest.Main
-    } else {
-      entryWarnings.push('Main entry point should be a string.')
     }
   }
 
   const includesAssetPackValue = params.manifest?.IncludesAssetPack
-  if (includesAssetPackValue !== undefined && typeof includesAssetPackValue !== 'boolean') {
-    entryWarnings.push('IncludesAssetPack should be a boolean.')
-  }
-
-  const disabledByDefaultValue = params.manifest?.DisabledByDefault
-  if (disabledByDefaultValue !== undefined && typeof disabledByDefaultValue !== 'boolean') {
-    entryWarnings.push('DisabledByDefault should be a boolean.')
-  }
-
-  if (params.manifest && typeof params.manifest.Name !== 'string') {
-    entryWarnings.push('Manifest missing Name field.')
-  }
-
-  const dependencies = readManifestDependencies(params.manifest?.Dependencies, 'Dependencies', entryWarnings)
-  const optionalDependencies = readManifestDependencies(
-    params.manifest?.OptionalDependencies,
-    'OptionalDependencies',
-    entryWarnings,
-  )
+  const dependencies = readManifestDependencies(params.manifest?.Dependencies)
+  const optionalDependencies = readManifestDependencies(params.manifest?.OptionalDependencies)
   const includesAssetPack = includesAssetPackValue === true
+
   const id = group ? `${group}:${name}` : name
   const overrideValue = params.enabledOverrides?.get(id)
+  // Hytale defaults mods to disabled if not explicitly enabled in config
+  // So we default to false (disabled) when no override is found
   const enabled =
     typeof params.enabledOverride === 'boolean'
       ? params.enabledOverride
       : typeof overrideValue === 'boolean'
         ? overrideValue
-        : disabledByDefaultValue === true
-          ? false
-          : true
+        : false
 
   return {
     id,
@@ -1854,19 +2103,13 @@ function createModEntry(params: {
     enabled,
     dependencies,
     optionalDependencies,
-    warnings: entryWarnings,
   }
 }
 
-function appendEntryWarnings(entry: ModEntry, warnings: string[]) {
-  for (const warning of entry.warnings) {
-    warnings.push(`${entry.name}: ${warning}`)
-  }
-}
+// appendEntryWarnings removed - warnings no longer tracked
 
 async function scanPacksFolder(
   packsPath: string,
-  warnings: string[],
   enabledOverride?: boolean,
   enabledOverrides?: Map<string, boolean>,
 ) {
@@ -1876,19 +2119,12 @@ async function scanPacksFolder(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const fullPath = path.join(packsPath, entry.name)
-    const entryWarnings: string[] = []
     let manifest: Record<string, unknown> | null = null
-    let manifestReadFailed = false
 
     try {
       manifest = await readManifestFromFolder(fullPath)
     } catch {
-      manifestReadFailed = true
-      entryWarnings.push('Failed to read manifest.json.')
-    }
-
-    if (!manifest && !manifestReadFailed) {
-      entryWarnings.push('manifest.json not found.')
+      // Failed to read manifest.json
     }
 
     const modEntry = createModEntry({
@@ -1899,10 +2135,8 @@ async function scanPacksFolder(
       path: fullPath,
       enabledOverride,
       enabledOverrides,
-      warnings: entryWarnings,
     })
 
-    appendEntryWarnings(modEntry, warnings)
     mods.push(modEntry)
   }
 
@@ -1911,7 +2145,6 @@ async function scanPacksFolder(
 
 async function scanModsFolder(
   modsPath: string,
-  warnings: string[],
   enabledOverride?: boolean,
   enabledOverrides?: Map<string, boolean>,
 ) {
@@ -1922,19 +2155,12 @@ async function scanModsFolder(
     const fullPath = path.join(modsPath, entry.name)
 
     if (entry.isDirectory()) {
-      const entryWarnings: string[] = []
       let manifest: Record<string, unknown> | null = null
-      let manifestReadFailed = false
 
       try {
         manifest = await readManifestFromFolder(fullPath)
       } catch {
-        manifestReadFailed = true
-        entryWarnings.push('Failed to read manifest.json.')
-      }
-
-      if (!manifest && !manifestReadFailed) {
-        entryWarnings.push('manifest.json not found.')
+        // Failed to read manifest.json
       }
 
       const modEntry = createModEntry({
@@ -1945,10 +2171,8 @@ async function scanModsFolder(
         path: fullPath,
         enabledOverride,
         enabledOverrides,
-        warnings: entryWarnings,
       })
 
-      appendEntryWarnings(modEntry, warnings)
       mods.push(modEntry)
       continue
     }
@@ -1958,22 +2182,15 @@ async function scanModsFolder(
       continue
     }
 
-    const entryWarnings: string[] = []
     let manifest: Record<string, unknown> | null = null
     let hasClasses = false
-    let archiveReadFailed = false
 
     try {
       const result = await readManifestFromArchive(fullPath)
       manifest = result.manifest
       hasClasses = result.hasClasses
     } catch {
-      archiveReadFailed = true
-      entryWarnings.push('Failed to read archive manifest.')
-    }
-
-    if (!manifest && !archiveReadFailed) {
-      entryWarnings.push('manifest.json not found in archive.')
+      // Failed to read archive manifest
     }
 
     const format: ModFormat = lowerName.endsWith('.jar') ? 'jar' : 'zip'
@@ -1986,10 +2203,8 @@ async function scanModsFolder(
       hasClasses,
       enabledOverride,
       enabledOverrides,
-      warnings: entryWarnings,
     })
 
-    appendEntryWarnings(modEntry, warnings)
     mods.push(modEntry)
   }
 
@@ -1998,7 +2213,6 @@ async function scanModsFolder(
 
 async function scanEarlyPluginsFolder(
   earlyPluginsPath: string,
-  warnings: string[],
   enabledOverride?: boolean,
   enabledOverrides?: Map<string, boolean>,
 ) {
@@ -2011,22 +2225,15 @@ async function scanEarlyPluginsFolder(
     if (!lowerName.endsWith('.jar')) continue
 
     const fullPath = path.join(earlyPluginsPath, entry.name)
-    const entryWarnings: string[] = []
     let manifest: Record<string, unknown> | null = null
     let hasClasses = false
-    let archiveReadFailed = false
 
     try {
       const result = await readManifestFromArchive(fullPath)
       manifest = result.manifest
       hasClasses = result.hasClasses
     } catch {
-      archiveReadFailed = true
-      entryWarnings.push('Failed to read archive manifest.')
-    }
-
-    if (!manifest && !archiveReadFailed) {
-      entryWarnings.push('manifest.json not found in archive.')
+      // Failed to read archive manifest
     }
 
     const modEntry = createModEntry({
@@ -2038,10 +2245,8 @@ async function scanEarlyPluginsFolder(
       hasClasses,
       enabledOverride,
       enabledOverrides,
-      warnings: entryWarnings,
     })
 
-    appendEntryWarnings(modEntry, warnings)
     mods.push(modEntry)
   }
 
@@ -2050,11 +2255,9 @@ async function scanEarlyPluginsFolder(
 
 async function scanMods(): Promise<ScanResult> {
   const info = await resolveInstallInfo()
-  const warnings = [...info.issues]
 
   if (!info.activePath) {
-    warnings.push('Hytale install path could not be detected.')
-    return { installPath: null, entries: [], warnings }
+    return { installPath: null, entries: [] }
   }
 
   const entries: ModEntry[] = []
@@ -2067,33 +2270,27 @@ async function scanMods(): Promise<ScanResult> {
   const worldOverrides = await readActiveWorldModOverrides(info.userDataPath)
 
   if (info.packsPath) {
-    entries.push(...(await scanPacksFolder(info.packsPath, warnings, undefined, worldOverrides ?? undefined)))
-  } else {
-    warnings.push('Packs folder not found.')
+    entries.push(...(await scanPacksFolder(info.packsPath, undefined, worldOverrides ?? undefined)))
   }
 
   if (await pathExists(disabledPaths.packs)) {
-    entries.push(...(await scanPacksFolder(disabledPaths.packs, warnings, false, worldOverrides ?? undefined)))
+    entries.push(...(await scanPacksFolder(disabledPaths.packs, false, worldOverrides ?? undefined)))
   }
 
   if (info.modsPath) {
-    entries.push(...(await scanModsFolder(info.modsPath, warnings, undefined, worldOverrides ?? undefined)))
-  } else {
-    warnings.push('Mods folder not found.')
+    entries.push(...(await scanModsFolder(info.modsPath, undefined, worldOverrides ?? undefined)))
   }
 
   if (await pathExists(disabledPaths.mods)) {
-    entries.push(...(await scanModsFolder(disabledPaths.mods, warnings, false, worldOverrides ?? undefined)))
+    entries.push(...(await scanModsFolder(disabledPaths.mods, false, worldOverrides ?? undefined)))
   }
 
   if (info.earlyPluginsPath) {
-    entries.push(...(await scanEarlyPluginsFolder(info.earlyPluginsPath, warnings, undefined, worldOverrides ?? undefined)))
-  } else {
-    warnings.push('Early plugins folder not found.')
+    entries.push(...(await scanEarlyPluginsFolder(info.earlyPluginsPath, undefined, worldOverrides ?? undefined)))
   }
 
   if (await pathExists(disabledPaths.earlyplugins)) {
-    entries.push(...(await scanEarlyPluginsFolder(disabledPaths.earlyplugins, warnings, false, worldOverrides ?? undefined)))
+    entries.push(...(await scanEarlyPluginsFolder(disabledPaths.earlyplugins, false, worldOverrides ?? undefined)))
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name))
@@ -2101,7 +2298,7 @@ async function scanMods(): Promise<ScanResult> {
   await seedProfilesFromScan(entries)
   await syncDefaultProfileFromScan(entries)
 
-  return { installPath: info.activePath, entries, warnings }
+  return { installPath: info.activePath, entries }
 }
 
 async function createBackupSnapshot(
@@ -2159,11 +2356,8 @@ async function readBackupSnapshot(snapshotId: string): Promise<BackupSnapshot | 
 async function restoreSnapshotFolder(
   snapshotPath: string,
   destination: string | null,
-  label: string,
-  warnings: string[],
 ) {
   if (!destination) {
-    warnings.push(`${label} path unavailable.`)
     return
   }
   await removePath(destination)
@@ -2172,7 +2366,6 @@ async function restoreSnapshotFolder(
     return
   }
   await ensureDir(destination)
-  warnings.push(`${label} snapshot missing; created empty folder.`)
 }
 
 async function applyProfile(profileId: string): Promise<ApplyResult> {
@@ -2189,13 +2382,12 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
 
   const scan = await scanMods()
   const snapshot = await createBackupSnapshot(profile.id, scan.entries, info)
-  const warnings: string[] = []
   const enabledSet = new Set(profile.enabledMods)
   const entryIds = new Set(scan.entries.map((entry) => entry.id))
 
   for (const id of enabledSet) {
     if (!entryIds.has(id)) {
-      warnings.push(`Profile expects ${id} but it was not found in the library.`)
+      // Mod not found in library
     }
   }
 
@@ -2208,13 +2400,11 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
     if (shouldEnable && currentlyDisabled) {
       const targetRoot = getLocationPath(info, entry.location)
       if (!targetRoot) {
-        warnings.push(`${entry.name}: ${LOCATION_LABELS[entry.location]} folder missing.`)
         continue
       }
       await ensureDir(targetRoot)
       const targetPath = path.join(targetRoot, path.basename(entry.path))
       if (await pathExists(targetPath)) {
-        warnings.push(`${entry.name}: already exists in ${LOCATION_LABELS[entry.location]}.`)
         continue
       }
       await movePath(entry.path, targetPath)
@@ -2226,21 +2416,19 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
       await ensureDir(disabledLocation)
       const targetPath = path.join(disabledLocation, path.basename(entry.path))
       if (await pathExists(targetPath)) {
-        warnings.push(`${entry.name}: already disabled in ${LOCATION_LABELS[entry.location]}.`)
         continue
       }
       await movePath(entry.path, targetPath)
     }
   }
 
-  await syncActiveWorldModConfig(info.userDataPath, enabledSet, scan.entries, warnings)
+  await syncActiveWorldModConfig(info.userDataPath, enabledSet, scan.entries)
   await writeSetting(SETTINGS_KEYS.lastSnapshot, snapshot.id)
 
   return {
     profileId: profile.id,
     snapshotId: snapshot.id,
     appliedAt: snapshot.createdAt,
-    warnings,
   }
 }
 
@@ -2268,27 +2456,20 @@ async function rollbackLastApply(): Promise<RollbackResult> {
   const scan = await scanMods()
   await createBackupSnapshot(`pre-rollback-${snapshotId}`, scan.entries, info)
 
-  const warnings: string[] = []
-
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'), LOCATION_LABELS.mods, warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'))
   await restoreSnapshotFolder(
     path.join(snapshotRoot, 'packs'),
     getLocationPath(info, 'packs'),
-    LOCATION_LABELS.packs,
-    warnings,
   )
   await restoreSnapshotFolder(
     path.join(snapshotRoot, 'earlyplugins'),
     getLocationPath(info, 'earlyplugins'),
-    LOCATION_LABELS.earlyplugins,
-    warnings,
   )
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot(), 'Disabled mods', warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot())
 
   return {
     snapshotId,
     restoredAt: new Date().toISOString(),
-    warnings,
   }
 }
 
@@ -2298,7 +2479,7 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
     throw new Error('Hytale install path not configured.')
   }
 
-  const warnings: string[] = []
+
   const packName = options.name.trim() || 'NewPack'
   const safeName = packName.replace(/[^a-zA-Z0-9_-]/g, '_')
 
@@ -2367,7 +2548,6 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
     success: true,
     path: packPath,
     manifestPath,
-    warnings,
   }
 }
 
@@ -2422,17 +2602,14 @@ async function restoreBackup(backupId: string): Promise<RollbackResult> {
   const scan = await scanMods()
   await createBackupSnapshot(`pre-restore-${backupId}`, scan.entries, info)
 
-  const warnings: string[] = []
-
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'), LOCATION_LABELS.mods, warnings)
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'packs'), getLocationPath(info, 'packs'), LOCATION_LABELS.packs, warnings)
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'earlyplugins'), getLocationPath(info, 'earlyplugins'), LOCATION_LABELS.earlyplugins, warnings)
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot(), 'Disabled mods', warnings)
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'))
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'packs'), getLocationPath(info, 'packs'))
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'earlyplugins'), getLocationPath(info, 'earlyplugins'))
+  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot())
 
   return {
     snapshotId: backupId,
     restoredAt: new Date().toISOString(),
-    warnings,
   }
 }
 
@@ -2518,8 +2695,6 @@ async function importModpack(): Promise<ImportModpackResult> {
     enabledMods: string[]
   }
 
-  const warnings: string[] = []
-
   const state = await createProfile(modpackMeta.name || 'Imported Profile')
   const newProfile = state.profiles.find((p) => p.id === state.activeProfileId)
   if (!newProfile) {
@@ -2531,7 +2706,6 @@ async function importModpack(): Promise<ImportModpackResult> {
 
   const validEnabledMods = modpackMeta.enabledMods.filter((id) => {
     if (!knownModIds.has(id)) {
-      warnings.push(`Mod "${id}" not found in library.`)
       return false
     }
     return true
@@ -2546,7 +2720,6 @@ async function importModpack(): Promise<ImportModpackResult> {
     success: true,
     profileId: newProfile.id,
     modCount: validEnabledMods.length,
-    warnings,
   }
 }
 
@@ -2568,13 +2741,22 @@ function registerIpcHandlers() {
     return resolveInstallInfo()
   })
 
-  ipcMain.handle('hymn:scan-mods', async () => scanMods())
+  ipcMain.handle('hymn:scan-mods', async (_event, worldId?: string) => scanModsWithWorld(worldId))
+  // Legacy profile handlers (kept for backwards compatibility)
   ipcMain.handle('hymn:get-profiles', async () => getProfilesState())
   ipcMain.handle('hymn:create-profile', async (_event, name: string) => createProfile(name ?? ''))
   ipcMain.handle('hymn:update-profile', async (_event, profile: Profile) => updateProfile(profile))
   ipcMain.handle('hymn:set-active-profile', async (_event, profileId: string) => setActiveProfile(profileId))
   ipcMain.handle('hymn:apply-profile', async (_event, profileId: string) => applyProfile(profileId))
   ipcMain.handle('hymn:rollback-last-apply', async () => rollbackLastApply())
+  // World management handlers
+  ipcMain.handle('hymn:get-worlds', async () => getWorlds())
+  ipcMain.handle('hymn:get-world-config', async (_event, worldId: string) => getWorldConfig(worldId))
+  ipcMain.handle('hymn:set-mod-enabled', async (_event, options: SetModEnabledOptions) => setModEnabled(options))
+  ipcMain.handle('hymn:set-selected-world', async (_event, worldId: string) => setSelectedWorld(worldId))
+  // Mod management handlers
+  ipcMain.handle('hymn:delete-mod', async (_event, options: DeleteModOptions) => deleteMod(options))
+  ipcMain.handle('hymn:add-mods', async () => addMods())
   ipcMain.handle('hymn:create-pack', async (_event, options: CreatePackOptions) => createPack(options))
   ipcMain.handle('hymn:get-mod-manifest', async (_event, options: ModManifestOptions) => getModManifest(options))
   ipcMain.handle('hymn:save-mod-manifest', async (_event, options: SaveManifestOptions) => saveModManifest(options))

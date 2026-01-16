@@ -4,13 +4,23 @@ import type { HymnApi } from '../src/shared/hymn-types'
 const api: HymnApi = {
   getInstallInfo: () => ipcRenderer.invoke('hymn:get-install-info'),
   selectInstallPath: () => ipcRenderer.invoke('hymn:select-install-path'),
-  scanMods: () => ipcRenderer.invoke('hymn:scan-mods'),
+  scanMods: (worldId?: string) => ipcRenderer.invoke('hymn:scan-mods', worldId),
+  // Legacy profile methods (kept for backwards compatibility)
   getProfiles: () => ipcRenderer.invoke('hymn:get-profiles'),
   createProfile: (name: string) => ipcRenderer.invoke('hymn:create-profile', name),
   updateProfile: (profile) => ipcRenderer.invoke('hymn:update-profile', profile),
   setActiveProfile: (profileId: string) => ipcRenderer.invoke('hymn:set-active-profile', profileId),
   applyProfile: (profileId: string) => ipcRenderer.invoke('hymn:apply-profile', profileId),
   rollbackLastApply: () => ipcRenderer.invoke('hymn:rollback-last-apply'),
+  // World management methods
+  getWorlds: () => ipcRenderer.invoke('hymn:get-worlds'),
+  getWorldConfig: (worldId: string) => ipcRenderer.invoke('hymn:get-world-config', worldId),
+  setModEnabled: (options) => ipcRenderer.invoke('hymn:set-mod-enabled', options),
+  setSelectedWorld: (worldId: string) => ipcRenderer.invoke('hymn:set-selected-world', worldId),
+  // Mod management methods
+  deleteMod: (options) => ipcRenderer.invoke('hymn:delete-mod', options),
+  addMods: () => ipcRenderer.invoke('hymn:add-mods'),
+  // Pack/mod creation and editing
   createPack: (options) => ipcRenderer.invoke('hymn:create-pack', options),
   getModManifest: (options) => ipcRenderer.invoke('hymn:get-mod-manifest', options),
   saveModManifest: (options) => ipcRenderer.invoke('hymn:save-mod-manifest', options),

@@ -13,13 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { WarningBox } from '@/components/WarningBox'
 import { useAppContext } from '@/context/AppContext'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
 
 export function LibrarySection() {
-  const { state, actions, activeProfile, enabledModIds, counts, warnings } = useAppContext()
+  const { state, actions, activeProfile, enabledModIds, counts } = useAppContext()
   const { installInfo, scanResult, isScanning, errorMessage } = state
   const [filter, setFilter] = useState('')
 
@@ -127,14 +125,13 @@ export function LibrarySection() {
                   <TableHead>Format</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>Version</TableHead>
-                  <TableHead>Warnings</TableHead>
                   <TableHead>Enabled</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleEntries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                       {installInfo?.activePath
                         ? 'No mods found in the selected folders.'
                         : 'Select a Hytale install folder to begin.'}
@@ -163,29 +160,6 @@ export function LibrarySection() {
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{entry.version ?? '—'}</TableCell>
-                        <TableCell className="whitespace-normal">
-                          {entry.warnings.length ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge variant="destructive" className="cursor-help">
-                                  {entry.warnings.length}{' '}
-                                  {entry.warnings.length === 1 ? 'warning' : 'warnings'}
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" className="max-w-xs">
-                                <ul className="space-y-1">
-                                  {entry.warnings.map((warning, index) => (
-                                    <li key={`${entry.id}-warning-${index}`} className="leading-snug">
-                                      {warning}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
                         <TableCell>
                           <Switch
                             checked={isEnabled}
@@ -201,8 +175,6 @@ export function LibrarySection() {
               </TableBody>
             </Table>
           </div>
-
-          <WarningBox title="Scan warnings" warnings={warnings} className="mt-4" />
         </CardContent>
       </Card>
     </>

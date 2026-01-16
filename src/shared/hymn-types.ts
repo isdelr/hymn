@@ -26,7 +26,6 @@ export interface ModAssetsOptions {
 
 export interface ModAssetsResult {
   assets: ModAsset[]
-  warnings: string[]
 }
 
 export interface ModManifestOptions {
@@ -37,7 +36,6 @@ export interface ModManifestOptions {
 export interface ModManifestResult {
   manifestPath: string | null
   content: string | null
-  warnings: string[]
   readOnly: boolean
 }
 
@@ -49,7 +47,6 @@ export interface SaveManifestOptions {
 
 export interface SaveManifestResult {
   success: boolean
-  warnings: string[]
 }
 
 export interface ModBuildOptions {
@@ -83,7 +80,6 @@ export interface ServerAssetListOptions {
 
 export interface ServerAssetListResult {
   assets: ServerAsset[]
-  warnings: string[]
 }
 
 export type ServerAssetTemplate = 'item' | 'block' | 'category' | 'empty'
@@ -115,7 +111,6 @@ export interface DeleteServerAssetOptions {
 export interface ServerAssetMutationResult {
   success: boolean
   asset: ServerAsset
-  warnings: string[]
 }
 
 export interface DeleteServerAssetResult {
@@ -145,7 +140,6 @@ export interface VanillaAssetListOptions {
 
 export interface VanillaAssetListResult {
   assets: VanillaAssetEntry[]
-  warnings: string[]
   roots: string[]
   hasMore: boolean
   nextOffset: number
@@ -163,7 +157,6 @@ export interface ImportVanillaAssetOptions {
 export interface ImportVanillaAssetResult {
   success: boolean
   asset: ServerAsset
-  warnings: string[]
 }
 
 export interface ModEntry {
@@ -179,7 +172,6 @@ export interface ModEntry {
   enabled: boolean
   dependencies: string[]
   optionalDependencies: string[]
-  warnings: string[]
   entryPoint: string | null
   includesAssetPack: boolean
 }
@@ -208,13 +200,11 @@ export interface ApplyResult {
   profileId: string
   snapshotId: string
   appliedAt: string
-  warnings: string[]
 }
 
 export interface RollbackResult {
   snapshotId: string
   restoredAt: string
-  warnings: string[]
 }
 
 export interface InstallInfo {
@@ -231,7 +221,6 @@ export interface InstallInfo {
 export interface ScanResult {
   installPath: string | null
   entries: ModEntry[]
-  warnings: string[]
 }
 
 export interface PackManifest {
@@ -267,7 +256,6 @@ export interface CreatePackResult {
   success: boolean
   path: string
   manifestPath: string
-  warnings: string[]
 }
 
 export interface BackupInfo {
@@ -293,19 +281,80 @@ export interface ImportModpackResult {
   success: boolean
   profileId: string
   modCount: number
-  warnings: string[]
+}
+
+// World-based mod management types
+export interface WorldInfo {
+  id: string // Folder name (unique identifier)
+  name: string // Display name
+  path: string // Full path to world folder
+  configPath: string // Path to config.json
+  previewPath: string | null // Path to preview.png if exists
+  previewDataUrl: string | null // Base64 preview image for UI
+  lastModified: string // ISO date string from folder mtime
+}
+
+export interface WorldModConfig {
+  [modId: string]: {
+    Enabled: boolean
+  }
+}
+
+export interface WorldConfig {
+  Mods?: WorldModConfig
+  [key: string]: unknown // Preserve other config properties
+}
+
+export interface WorldsState {
+  worlds: WorldInfo[]
+  selectedWorldId: string | null
+}
+
+export interface SetModEnabledOptions {
+  worldId: string
+  modId: string
+  enabled: boolean
+}
+
+export interface SetModEnabledResult {
+  success: boolean
+}
+
+export interface DeleteModOptions {
+  modId: string
+  modPath: string
+}
+
+export interface DeleteModResult {
+  success: boolean
+  backupPath: string
+}
+
+export interface AddModResult {
+  success: boolean
+  addedPaths: string[]
 }
 
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
-  scanMods: () => Promise<ScanResult>
+  scanMods: (worldId?: string) => Promise<ScanResult>
+  // Legacy profile methods (kept for backwards compatibility)
   getProfiles: () => Promise<ProfilesState>
   createProfile: (name: string) => Promise<ProfilesState>
   updateProfile: (profile: Profile) => Promise<Profile>
   setActiveProfile: (profileId: string) => Promise<ProfilesState>
   applyProfile: (profileId: string) => Promise<ApplyResult>
   rollbackLastApply: () => Promise<RollbackResult>
+  // World management methods
+  getWorlds: () => Promise<WorldsState>
+  getWorldConfig: (worldId: string) => Promise<WorldConfig | null>
+  setModEnabled: (options: SetModEnabledOptions) => Promise<SetModEnabledResult>
+  setSelectedWorld: (worldId: string) => Promise<void>
+  // Mod management methods
+  deleteMod: (options: DeleteModOptions) => Promise<DeleteModResult>
+  addMods: () => Promise<AddModResult>
+  // Pack/mod creation and editing
   createPack: (options: CreatePackOptions) => Promise<CreatePackResult>
   getModManifest: (options: ModManifestOptions) => Promise<ModManifestResult>
   saveModManifest: (options: SaveManifestOptions) => Promise<SaveManifestResult>
