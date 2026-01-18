@@ -83,6 +83,8 @@ import type {
   // Projects folder types
   ProjectEntry,
   ListProjectsResult,
+  DeleteProjectOptions,
+  DeleteProjectResult,
   InstallProjectOptions,
   InstallProjectResult,
   UninstallProjectOptions,
@@ -90,6 +92,19 @@ import type {
   // Package mod types
   PackageModOptions,
   PackageModResult,
+  // Build workflow types
+  BuildArtifact,
+  BuildArtifactListResult,
+  DeleteBuildArtifactOptions,
+  DeleteBuildArtifactResult,
+  ClearAllBuildArtifactsResult,
+  CopyArtifactToModsResult,
+  CheckDependenciesResult,
+  JavaDependencyInfo,
+  BuildPluginOptions,
+  BuildPluginResult,
+  BuildPackOptions,
+  BuildPackResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -116,6 +131,7 @@ const SETTINGS_KEYS = {
   theme: 'app_theme',
   modSortOrder: 'mod_sort_order',
   defaultExportPath: 'default_export_path',
+  jdkPath: 'jdk_path',
 }
 const DELETED_MODS_FOLDER = 'deleted-mods'
 
@@ -274,6 +290,18 @@ function getDisabledRoot() {
 
 function getProjectsRoot() {
   return path.join(app.getPath('userData'), 'projects')
+}
+
+function getBuildsRoot() {
+  return path.join(app.getPath('userData'), 'builds')
+}
+
+function getPluginBuildsRoot() {
+  return path.join(getBuildsRoot(), 'plugins')
+}
+
+function getPackBuildsRoot() {
+  return path.join(getBuildsRoot(), 'packs')
 }
 
 function getDisabledLocationPath(location: ModLocation) {
@@ -1596,6 +1624,577 @@ async function buildMod(options: ModBuildOptions): Promise<ModBuildResult> {
     truncated: result.truncated,
   }
 }
+
+// ===== Build Workflow Functions =====
+
+function getJavaDownloadInstructions(): string {
+  const platform = process.platform
+  if (platform === 'win32') {
+    return 'Download and install Java 21 (LTS) from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21\n\nSelect Windows x64 MSI installer for easy installation.'
+  } else if (platform === 'darwin') {
+    return 'Install Java 21 via Homebrew:\nbrew install --cask temurin@21\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21'
+  } else {
+    return 'Install Java 21 from your package manager:\nUbuntu/Debian: sudo apt install openjdk-21-jdk\nFedora: sudo dnf install java-21-openjdk-devel\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21'
+  }
+}
+
+async function checkDependencies(): Promise<CheckDependenciesResult> {
+  const javaInfo = await checkJavaDependency()
+  return {
+    java: javaInfo,
+    canBuildPlugins: javaInfo.status === 'found',
+    canBuildPacks: true, // Packs don't need external dependencies
+  }
+}
+
+async function checkJavaDependency(): Promise<JavaDependencyInfo> {
+  const customJdkPath = await readSetting(SETTINGS_KEYS.jdkPath)
+  const javaHome = process.env.JAVA_HOME
+
+  let jdkPath: string | null = null
+  let javaExecutable: string | null = null
+
+  // Priority: custom path > JAVA_HOME
+  if (customJdkPath && await pathExists(customJdkPath)) {
+    jdkPath = customJdkPath
+    const binPath = process.platform === 'win32'
+      ? path.join(customJdkPath, 'bin', 'java.exe')
+      : path.join(customJdkPath, 'bin', 'java')
+    if (await pathExists(binPath)) {
+      javaExecutable = binPath
+    }
+  } else if (javaHome && await pathExists(javaHome)) {
+    jdkPath = javaHome
+    const binPath = process.platform === 'win32'
+      ? path.join(javaHome, 'bin', 'java.exe')
+      : path.join(javaHome, 'bin', 'java')
+    if (await pathExists(binPath)) {
+      javaExecutable = binPath
+    }
+  }
+
+  // If no configured path, try to find java on PATH
+  if (!javaExecutable) {
+    try {
+      const result = await runCommand(process.platform === 'win32' ? 'where' : 'which', ['java'], process.cwd())
+      if (result.exitCode === 0 && result.output.trim()) {
+        javaExecutable = result.output.trim().split('\n')[0].trim()
+        // Try to determine JDK path from executable
+        if (javaExecutable) {
+          const execDir = path.dirname(javaExecutable)
+          if (path.basename(execDir) === 'bin') {
+            jdkPath = path.dirname(execDir)
+          }
+        }
+      }
+    } catch {
+      // java not found on PATH
+    }
+  }
+
+  if (!javaExecutable) {
+    return {
+      status: 'missing',
+      jdkPath: null,
+      version: null,
+      issues: ['Java is not installed or not found in PATH.'],
+      downloadInstructions: getJavaDownloadInstructions(),
+    }
+  }
+
+  // Check Java version
+  try {
+    const result = await runCommand(javaExecutable, ['-version'], process.cwd())
+    const output = result.output
+
+    // Parse version from output (format varies: "java version "17.0.1"" or "openjdk version "17.0.1"")
+    const versionMatch = output.match(/(?:java|openjdk) version "(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+      || output.match(/version "(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+
+    if (!versionMatch) {
+      return {
+        status: 'incompatible',
+        jdkPath,
+        version: null,
+        issues: ['Could not determine Java version.'],
+        downloadInstructions: getJavaDownloadInstructions(),
+      }
+    }
+
+    const majorVersion = parseInt(versionMatch[1], 10)
+    const versionString = versionMatch[0].replace(/version "/, '').replace(/"$/, '')
+
+    // Hytale plugins require Java 17+
+    if (majorVersion < 17) {
+      return {
+        status: 'incompatible',
+        jdkPath,
+        version: versionString,
+        issues: [`Java ${majorVersion} is installed, but Hytale plugins require Java 17 or later.`],
+        downloadInstructions: getJavaDownloadInstructions(),
+      }
+    }
+
+    return {
+      status: 'found',
+      jdkPath,
+      version: versionString,
+      issues: [],
+      downloadInstructions: '',
+    }
+  } catch {
+    return {
+      status: 'missing',
+      jdkPath,
+      version: null,
+      issues: ['Failed to run Java. Please verify your installation.'],
+      downloadInstructions: getJavaDownloadInstructions(),
+    }
+  }
+}
+
+interface BuildMetaFile {
+  artifacts: BuildArtifact[]
+}
+
+async function loadBuildMeta(projectDir: string): Promise<BuildMetaFile> {
+  const metaPath = path.join(projectDir, 'build-meta.json')
+  try {
+    if (await pathExists(metaPath)) {
+      const content = await fs.readFile(metaPath, 'utf-8')
+      return JSON.parse(content) as BuildMetaFile
+    }
+  } catch {
+    // Invalid or missing meta file
+  }
+  return { artifacts: [] }
+}
+
+async function saveBuildMeta(projectDir: string, meta: BuildMetaFile): Promise<void> {
+  await ensureDir(projectDir)
+  const metaPath = path.join(projectDir, 'build-meta.json')
+  await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+}
+
+async function addArtifactToMeta(projectDir: string, artifact: BuildArtifact): Promise<void> {
+  const meta = await loadBuildMeta(projectDir)
+
+  // Remove any existing artifact with the same output path (rebuild same version)
+  meta.artifacts = meta.artifacts.filter(a => a.outputPath !== artifact.outputPath)
+
+  // Add new artifact
+  meta.artifacts.push(artifact)
+
+  await saveBuildMeta(projectDir, meta)
+}
+
+async function removeArtifactFromMeta(projectDir: string, artifactId: string): Promise<void> {
+  const meta = await loadBuildMeta(projectDir)
+  meta.artifacts = meta.artifacts.filter(a => a.id !== artifactId)
+  await saveBuildMeta(projectDir, meta)
+}
+
+async function buildPlugin(options: BuildPluginOptions): Promise<BuildPluginResult> {
+  const startedAt = Date.now()
+
+  if (!(await pathExists(options.projectPath))) {
+    throw new Error('Plugin project folder not found.')
+  }
+
+  // First, run the regular Gradle build
+  const buildResult = await buildMod({ path: options.projectPath, task: options.task })
+
+  if (!buildResult.success) {
+    return {
+      success: false,
+      exitCode: buildResult.exitCode,
+      output: buildResult.output,
+      durationMs: buildResult.durationMs,
+      truncated: buildResult.truncated,
+      artifact: null,
+    }
+  }
+
+  // Find the built JAR in build/libs/
+  const buildLibsDir = path.join(options.projectPath, 'build', 'libs')
+  if (!(await pathExists(buildLibsDir))) {
+    return {
+      success: true,
+      exitCode: buildResult.exitCode,
+      output: buildResult.output + '\n\nWarning: build/libs/ directory not found. No artifact was created.',
+      durationMs: buildResult.durationMs,
+      truncated: buildResult.truncated,
+      artifact: null,
+    }
+  }
+
+  // Find the primary JAR (not -sources, -javadoc, etc.)
+  const files = await fs.readdir(buildLibsDir)
+  const jarFiles = files.filter(f => f.endsWith('.jar') && !f.includes('-sources') && !f.includes('-javadoc'))
+
+  if (jarFiles.length === 0) {
+    return {
+      success: true,
+      exitCode: buildResult.exitCode,
+      output: buildResult.output + '\n\nWarning: No JAR file found in build/libs/.',
+      durationMs: buildResult.durationMs,
+      truncated: buildResult.truncated,
+      artifact: null,
+    }
+  }
+
+  const jarFile = jarFiles[0]
+  const sourcePath = path.join(buildLibsDir, jarFile)
+
+  // Get project info from manifest
+  const manifestResult = await getModManifest({ path: options.projectPath, format: 'directory' })
+  let projectName = path.basename(options.projectPath)
+  let version = '1.0.0'
+
+  if (manifestResult.content) {
+    try {
+      const manifest = JSON.parse(manifestResult.content) as PackManifest
+      projectName = manifest.Name || projectName
+      version = manifest.Version || version
+    } catch {
+      // Use defaults
+    }
+  }
+
+  // Copy JAR to builds folder
+  const projectBuildsDir = path.join(getPluginBuildsRoot(), projectName)
+  const artifactName = `${projectName}-${version}.jar`
+  const destPath = path.join(projectBuildsDir, artifactName)
+
+  await ensureDir(projectBuildsDir)
+  await fs.copyFile(sourcePath, destPath)
+
+  const stats = await fs.stat(destPath)
+  const durationMs = Date.now() - startedAt
+
+  const artifact: BuildArtifact = {
+    id: randomUUID(),
+    projectName,
+    version,
+    outputPath: destPath,
+    builtAt: new Date().toISOString(),
+    durationMs,
+    fileSize: stats.size,
+    artifactType: 'jar',
+  }
+
+  await addArtifactToMeta(projectBuildsDir, artifact)
+
+  return {
+    success: true,
+    exitCode: buildResult.exitCode,
+    output: buildResult.output,
+    durationMs,
+    truncated: buildResult.truncated,
+    artifact,
+  }
+}
+
+async function addDirectoryToZipFiltered(
+  zip: JSZip,
+  dir: string,
+  baseDir: string,
+  excludes: string[]
+): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true })
+
+  for (const entry of entries) {
+    // Skip excluded patterns
+    if (excludes.some(ex => entry.name === ex || entry.name.startsWith(ex))) {
+      continue
+    }
+
+    const fullPath = path.join(dir, entry.name)
+    const relativePath = path.relative(baseDir, fullPath)
+
+    if (entry.isDirectory()) {
+      await addDirectoryToZipFiltered(zip, fullPath, baseDir, excludes)
+    } else if (entry.isFile()) {
+      const content = await fs.readFile(fullPath)
+      zip.file(relativePath, content)
+    }
+  }
+}
+
+async function buildPack(options: BuildPackOptions): Promise<BuildPackResult> {
+  const startedAt = Date.now()
+  let output = ''
+
+  if (!(await pathExists(options.projectPath))) {
+    throw new Error('Pack project folder not found.')
+  }
+
+  output += 'Starting pack build...\n'
+
+  // Get project info from manifest
+  const manifestResult = await getModManifest({ path: options.projectPath, format: 'directory' })
+  let projectName = path.basename(options.projectPath)
+  let version = '1.0.0'
+
+  if (manifestResult.content) {
+    try {
+      const manifest = JSON.parse(manifestResult.content) as PackManifest
+      projectName = manifest.Name || projectName
+      version = manifest.Version || version
+      output += `Found manifest: ${projectName} v${version}\n`
+    } catch {
+      output += 'Warning: Could not parse manifest, using defaults.\n'
+    }
+  }
+
+  // Create ZIP file
+  const zip = new JSZip()
+  const excludes = ['.git', '.idea', '.vscode', 'node_modules', '.DS_Store', 'Thumbs.db']
+
+  output += 'Adding files to archive...\n'
+  await addDirectoryToZipFiltered(zip, options.projectPath, options.projectPath, excludes)
+
+  // Write ZIP to builds folder
+  const projectBuildsDir = path.join(getPackBuildsRoot(), projectName)
+  const artifactName = `${projectName}-${version}.zip`
+  const destPath = path.join(projectBuildsDir, artifactName)
+
+  await ensureDir(projectBuildsDir)
+
+  output += `Writing ZIP to: ${destPath}\n`
+  const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  await fs.writeFile(destPath, buffer)
+
+  const stats = await fs.stat(destPath)
+  const durationMs = Date.now() - startedAt
+
+  output += `Build complete! Size: ${(stats.size / 1024).toFixed(1)} KB\n`
+
+  const artifact: BuildArtifact = {
+    id: randomUUID(),
+    projectName,
+    version,
+    outputPath: destPath,
+    builtAt: new Date().toISOString(),
+    durationMs,
+    fileSize: stats.size,
+    artifactType: 'zip',
+  }
+
+  await addArtifactToMeta(projectBuildsDir, artifact)
+
+  return {
+    success: true,
+    output,
+    durationMs,
+    artifact,
+  }
+}
+
+async function listBuildArtifacts(): Promise<BuildArtifactListResult> {
+  const artifacts: BuildArtifact[] = []
+
+  // Scan plugins folder
+  const pluginsRoot = getPluginBuildsRoot()
+  if (await pathExists(pluginsRoot)) {
+    const pluginDirs = await fs.readdir(pluginsRoot, { withFileTypes: true })
+    for (const dir of pluginDirs) {
+      if (!dir.isDirectory()) continue
+      const projectDir = path.join(pluginsRoot, dir.name)
+      const meta = await loadBuildMeta(projectDir)
+
+      // Filter to only include artifacts that still exist
+      for (const artifact of meta.artifacts) {
+        if (await pathExists(artifact.outputPath)) {
+          artifacts.push(artifact)
+        }
+      }
+    }
+  }
+
+  // Scan packs folder
+  const packsRoot = getPackBuildsRoot()
+  if (await pathExists(packsRoot)) {
+    const packDirs = await fs.readdir(packsRoot, { withFileTypes: true })
+    for (const dir of packDirs) {
+      if (!dir.isDirectory()) continue
+      const projectDir = path.join(packsRoot, dir.name)
+      const meta = await loadBuildMeta(projectDir)
+
+      // Filter to only include artifacts that still exist
+      for (const artifact of meta.artifacts) {
+        if (await pathExists(artifact.outputPath)) {
+          artifacts.push(artifact)
+        }
+      }
+    }
+  }
+
+  // Sort by build date, newest first
+  artifacts.sort((a, b) => new Date(b.builtAt).getTime() - new Date(a.builtAt).getTime())
+
+  return { artifacts }
+}
+
+async function findArtifactById(artifactId: string): Promise<{ artifact: BuildArtifact; projectDir: string } | null> {
+  // Search in plugins
+  const pluginsRoot = getPluginBuildsRoot()
+  if (await pathExists(pluginsRoot)) {
+    const pluginDirs = await fs.readdir(pluginsRoot, { withFileTypes: true })
+    for (const dir of pluginDirs) {
+      if (!dir.isDirectory()) continue
+      const projectDir = path.join(pluginsRoot, dir.name)
+      const meta = await loadBuildMeta(projectDir)
+      const artifact = meta.artifacts.find(a => a.id === artifactId)
+      if (artifact) {
+        return { artifact, projectDir }
+      }
+    }
+  }
+
+  // Search in packs
+  const packsRoot = getPackBuildsRoot()
+  if (await pathExists(packsRoot)) {
+    const packDirs = await fs.readdir(packsRoot, { withFileTypes: true })
+    for (const dir of packDirs) {
+      if (!dir.isDirectory()) continue
+      const projectDir = path.join(packsRoot, dir.name)
+      const meta = await loadBuildMeta(projectDir)
+      const artifact = meta.artifacts.find(a => a.id === artifactId)
+      if (artifact) {
+        return { artifact, projectDir }
+      }
+    }
+  }
+
+  return null
+}
+
+async function deleteBuildArtifact(options: DeleteBuildArtifactOptions): Promise<DeleteBuildArtifactResult> {
+  const found = await findArtifactById(options.artifactId)
+
+  if (!found) {
+    throw new Error('Artifact not found.')
+  }
+
+  const { artifact, projectDir } = found
+
+  // Delete the file
+  if (await pathExists(artifact.outputPath)) {
+    await fs.unlink(artifact.outputPath)
+  }
+
+  // Remove from meta
+  await removeArtifactFromMeta(projectDir, artifact.id)
+
+  return { success: true }
+}
+
+async function clearAllBuildArtifacts(): Promise<ClearAllBuildArtifactsResult> {
+  let deletedCount = 0
+
+  // Clear plugins builds
+  const pluginsRoot = getPluginBuildsRoot()
+  if (await pathExists(pluginsRoot)) {
+    const pluginProjects = await fs.readdir(pluginsRoot, { withFileTypes: true })
+    for (const entry of pluginProjects) {
+      if (entry.isDirectory()) {
+        const projectDir = path.join(pluginsRoot, entry.name)
+        // Delete all files in the project directory
+        const files = await fs.readdir(projectDir)
+        for (const file of files) {
+          const filePath = path.join(projectDir, file)
+          const stat = await fs.stat(filePath)
+          if (stat.isFile() && (file.endsWith('.jar') || file === 'build-meta.json')) {
+            if (file.endsWith('.jar')) deletedCount++
+            await fs.unlink(filePath)
+          }
+        }
+        // Remove empty directory
+        const remaining = await fs.readdir(projectDir)
+        if (remaining.length === 0) {
+          await fs.rmdir(projectDir)
+        }
+      }
+    }
+  }
+
+  // Clear packs builds
+  const packsRoot = getPackBuildsRoot()
+  if (await pathExists(packsRoot)) {
+    const packProjects = await fs.readdir(packsRoot, { withFileTypes: true })
+    for (const entry of packProjects) {
+      if (entry.isDirectory()) {
+        const projectDir = path.join(packsRoot, entry.name)
+        // Delete all files in the project directory
+        const files = await fs.readdir(projectDir)
+        for (const file of files) {
+          const filePath = path.join(projectDir, file)
+          const stat = await fs.stat(filePath)
+          if (stat.isFile() && (file.endsWith('.zip') || file === 'build-meta.json')) {
+            if (file.endsWith('.zip')) deletedCount++
+            await fs.unlink(filePath)
+          }
+        }
+        // Remove empty directory
+        const remaining = await fs.readdir(projectDir)
+        if (remaining.length === 0) {
+          await fs.rmdir(projectDir)
+        }
+      }
+    }
+  }
+
+  return { success: true, deletedCount }
+}
+
+async function revealBuildArtifact(artifactId: string): Promise<void> {
+  const found = await findArtifactById(artifactId)
+
+  if (!found) {
+    throw new Error('Artifact not found.')
+  }
+
+  await shell.showItemInFolder(found.artifact.outputPath)
+}
+
+async function copyArtifactToMods(artifactId: string): Promise<CopyArtifactToModsResult> {
+  const found = await findArtifactById(artifactId)
+
+  if (!found) {
+    throw new Error('Artifact not found.')
+  }
+
+  const { artifact } = found
+
+  // Get install info to find the mods/packs folder
+  const installInfo = await resolveInstallInfo()
+
+  if (!installInfo.activePath) {
+    throw new Error('Hytale installation not found. Please configure install path in settings.')
+  }
+
+  let destFolder: string
+  if (artifact.artifactType === 'jar') {
+    // Plugins go to Mods folder
+    destFolder = installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods')
+  } else {
+    // Asset packs go to Packs folder
+    destFolder = installInfo.packsPath || path.join(installInfo.activePath, 'user', 'Packs')
+  }
+
+  await ensureDir(destFolder)
+
+  const destPath = path.join(destFolder, path.basename(artifact.outputPath))
+  await fs.copyFile(artifact.outputPath, destPath)
+
+  return {
+    success: true,
+    destinationPath: destPath,
+  }
+}
+
+// ===== End Build Workflow Functions =====
 
 async function listServerAssets(options: ServerAssetListOptions): Promise<ServerAssetListResult> {
   const assets: ServerAsset[] = []
@@ -3138,25 +3737,33 @@ if "%OS%"=="Windows_NT" endlocal
   // gradle-wrapper.properties
   const gradleWrapperProperties = `distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
-distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10-bin.zip
+distributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.0-bin.zip
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 `
   await fs.writeFile(path.join(gradleWrapperPath, 'gradle-wrapper.properties'), gradleWrapperProperties, 'utf-8')
 
-  // Download gradle-wrapper.jar (or create a placeholder that will auto-download)
-  // For simplicity, we'll create a minimal README explaining to run gradle wrapper
-  const gradleWrapperReadme = `# Gradle Wrapper
-
-The gradle-wrapper.jar file will be downloaded automatically when you first run:
-
-    ./gradlew build    (Linux/Mac)
-    gradlew.bat build  (Windows)
-
-Or you can download it manually from:
-https://github.com/gradle/gradle/tree/master/gradle/wrapper
-`
-  await fs.writeFile(path.join(gradleWrapperPath, 'README.md'), gradleWrapperReadme, 'utf-8')
+  // Download gradle-wrapper.jar from official Gradle services
+  const gradleWrapperJarPath = path.join(gradleWrapperPath, 'gradle-wrapper.jar')
+  try {
+    const wrapperJarUrl = 'https://services.gradle.org/distributions/gradle-9.3.0-wrapper.jar'
+    const response = await fetch(wrapperJarUrl)
+    if (response.ok) {
+      const buffer = await response.arrayBuffer()
+      await fs.writeFile(gradleWrapperJarPath, Buffer.from(buffer))
+    } else {
+      // Fallback: try GitHub raw URL
+      const altUrl = 'https://github.com/gradle/gradle/raw/v9.3.0/gradle/wrapper/gradle-wrapper.jar'
+      const altResponse = await fetch(altUrl)
+      if (altResponse.ok) {
+        const buffer = await altResponse.arrayBuffer()
+        await fs.writeFile(gradleWrapperJarPath, Buffer.from(buffer))
+      }
+    }
+  } catch {
+    // If download fails, log warning but don't fail project creation
+    console.warn('Failed to download gradle-wrapper.jar - user will need to run gradle wrapper manually')
+  }
 
   // manifest.json
   const manifest = {
@@ -3837,6 +4444,34 @@ async function listProjects(): Promise<ListProjectsResult> {
   return { projects }
 }
 
+async function deleteProject(options: DeleteProjectOptions): Promise<DeleteProjectResult> {
+  const { projectPath } = options
+
+  try {
+    // Verify the path is within our projects folder for safety
+    const projectsRoot = getProjectsRoot()
+    const normalizedPath = path.normalize(projectPath)
+    const normalizedRoot = path.normalize(projectsRoot)
+
+    if (!normalizedPath.startsWith(normalizedRoot)) {
+      return { success: false, error: 'Cannot delete projects outside of the projects folder' }
+    }
+
+    // Check if path exists
+    if (!(await pathExists(projectPath))) {
+      return { success: false, error: 'Project path does not exist' }
+    }
+
+    // Delete the project directory recursively
+    await fs.rm(projectPath, { recursive: true, force: true })
+
+    return { success: true }
+  } catch (err) {
+    console.error('Failed to delete project:', err)
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 async function installProject(options: InstallProjectOptions): Promise<InstallProjectResult> {
   const { projectPath, projectType } = options
   const info = await resolveInstallInfo()
@@ -4035,6 +4670,7 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:import-world-mods', async () => importWorldMods())
   // Projects folder management
   ipcMain.handle('hymn:list-projects', async () => listProjects())
+  ipcMain.handle('hymn:delete-project', async (_event, options: DeleteProjectOptions) => deleteProject(options))
   ipcMain.handle('hymn:install-project', async (_event, options: InstallProjectOptions) => installProject(options))
   ipcMain.handle('hymn:uninstall-project', async (_event, options: UninstallProjectOptions) => uninstallProject(options))
   // Package mod (zip creation)
@@ -4053,6 +4689,43 @@ function registerIpcHandlers() {
     'hymn:delete-java-class',
     async (_event, options: { projectPath: string; relativePath: string }) => deleteJavaClass(options),
   )
+  // Build workflow handlers
+  ipcMain.handle('hymn:check-dependencies', async () => checkDependencies())
+  ipcMain.handle('hymn:build-plugin', async (_event, options: BuildPluginOptions) => buildPlugin(options))
+  ipcMain.handle('hymn:build-pack', async (_event, options: BuildPackOptions) => buildPack(options))
+  ipcMain.handle('hymn:list-build-artifacts', async () => listBuildArtifacts())
+  ipcMain.handle('hymn:delete-build-artifact', async (_event, options: DeleteBuildArtifactOptions) => deleteBuildArtifact(options))
+  ipcMain.handle('hymn:clear-all-build-artifacts', async () => clearAllBuildArtifacts())
+  ipcMain.handle('hymn:reveal-build-artifact', async (_event, artifactId: string) => revealBuildArtifact(artifactId))
+  ipcMain.handle('hymn:copy-artifact-to-mods', async (_event, artifactId: string) => copyArtifactToMods(artifactId))
+  ipcMain.handle('hymn:open-builds-folder', async () => {
+    const buildsRoot = getBuildsRoot()
+    await fs.mkdir(buildsRoot, { recursive: true })
+    await shell.openPath(buildsRoot)
+  })
+  ipcMain.handle('hymn:open-in-editor', async (_event, targetPath: string) => {
+    // On Windows, use 'start' to show the "Open With" dialog
+    // On macOS, use 'open -a' or just 'open' to use default app
+    // On Linux, use 'xdg-open' to open with default application
+    const { exec } = await import('node:child_process')
+    const { promisify } = await import('node:util')
+    const execAsync = promisify(exec)
+
+    const platform = process.platform
+    try {
+      if (platform === 'win32') {
+        // Use explorer to show "Open With" context, or just open the folder in VS Code / default
+        await execAsync(`explorer "${targetPath}"`)
+      } else if (platform === 'darwin') {
+        await execAsync(`open "${targetPath}"`)
+      } else {
+        await execAsync(`xdg-open "${targetPath}"`)
+      }
+    } catch {
+      // Fallback to shell.openPath
+      await shell.openPath(targetPath)
+    }
+  })
 
   // Theme handlers
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors)
@@ -4093,6 +4766,25 @@ function registerIpcHandlers() {
     }
     const selectedPath = result.filePaths[0]
     await writeSetting(SETTINGS_KEYS.defaultExportPath, selectedPath)
+    return selectedPath
+  })
+  // JDK path settings handlers
+  ipcMain.handle('settings:getJdkPath', async () => {
+    return readSetting(SETTINGS_KEYS.jdkPath)
+  })
+  ipcMain.handle('settings:setJdkPath', async (_event, jdkPath: string | null) => {
+    await writeSetting(SETTINGS_KEYS.jdkPath, jdkPath)
+  })
+  ipcMain.handle('settings:selectJdkPath', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Java Development Kit (JDK) Folder',
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+    const selectedPath = result.filePaths[0]
+    await writeSetting(SETTINGS_KEYS.jdkPath, selectedPath)
     return selectedPath
   })
 

@@ -18,6 +18,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -27,7 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 // React Query hooks
 import { useInstallInfo, useProjects } from '@/hooks/queries'
-import { useCreatePack, useCreatePlugin } from '@/hooks/mutations'
+import { useCreatePack, useCreatePlugin, useDeleteProject } from '@/hooks/mutations'
 
 function InfoTooltip({ children }: { children: React.ReactNode }) {
   return (
@@ -54,10 +64,12 @@ export function CreateSection() {
   // Mutations
   const createPack = useCreatePack()
   const createPlugin = useCreatePlugin()
+  const deleteProject = useDeleteProject()
 
   const [activeProject, setActiveProject] = useState<ProjectEntry | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [projectType, setProjectType] = useState<ProjectType>('pack')
+  const [projectToDelete, setProjectToDelete] = useState<ProjectEntry | null>(null)
 
   // Common Creation State
   const [projectName, setProjectName] = useState('')
@@ -112,6 +124,12 @@ export function CreateSection() {
     setProjectType('pack')
   }
 
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return
+    await deleteProject.mutateAsync({ projectPath: projectToDelete.path })
+    setProjectToDelete(null)
+  }
+
   const hasInstall = !!installInfo?.activePath
 
   if (!hasInstall) {
@@ -134,7 +152,6 @@ export function CreateSection() {
           setActiveProject(null)
           loadProjects()
         }}
-        onInstallChange={() => loadProjects()}
       />
     )
   }
@@ -350,11 +367,33 @@ export function CreateSection() {
                 project={project}
                 onOpen={setActiveProject}
                 onExplore={(path) => window.hymn.openInExplorer(path)}
+                onDelete={setProjectToDelete}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Delete Project Confirmation Dialog */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{projectToDelete?.name}</strong>? This will permanently remove all project files. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

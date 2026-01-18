@@ -1,15 +1,15 @@
 import { useState } from 'react'
-import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate } from '@/shared/hymn-types'
+import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate, BuildPluginResult } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
     ChevronLeft,
     Play,
     Code,
     Package,
-    FolderOpen,
-    Download,
-    Trash2,
+    ExternalLink,
+    AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDirtyFilesStore } from '@/stores'
@@ -24,9 +24,11 @@ import { AssetGrid } from './AssetGrid'
 import { AssetDetails } from './AssetDetails'
 import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
+import { BuildOutputDialog } from './BuildOutputDialog'
+import { DependencyStatus } from './DependencyBanner'
 
 // React Query hooks
-import { useJavaSources, useAssets } from '@/hooks/queries'
+import { useJavaSources, useAssets, useDependencies } from '@/hooks/queries'
 import {
     useCreateJavaClass,
     useDeleteJavaFile,
@@ -34,20 +36,18 @@ import {
     useCreateAsset,
     useDeleteAsset,
     useRenameAsset,
-    useInstallProject,
-    useUninstallProject,
-    useBuildProject,
+    useBuildPlugin,
+    useRevealBuildArtifact,
 } from '@/hooks/mutations'
 
 interface PluginWorkspaceProps {
     project: ProjectEntry
     onBack: () => void
-    onInstallChange?: () => void
 }
 
 type WorkspaceMode = 'source' | 'assets'
 
-export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWorkspaceProps) {
+export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
     // Mode: source code vs assets (for plugins with includesAssetPack)
     const [mode, setMode] = useState<WorkspaceMode>('source')
 
@@ -56,9 +56,11 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(
         project.includesAssetPack ? project.path : null
     )
+    const { data: dependencies } = useDependencies()
 
     const sources = sourceData?.sources ?? []
     const basePackage = sourceData?.basePackage ?? ''
+    const canBuild = dependencies?.canBuildPlugins ?? false
 
     // Mutations
     const createJavaClass = useCreateJavaClass()
@@ -67,9 +69,8 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const createAsset = useCreateAsset()
     const deleteAsset = useDeleteAsset()
     const renameAsset = useRenameAsset()
-    const installProject = useInstallProject()
-    const uninstallProject = useUninstallProject()
-    const buildProject = useBuildProject()
+    const buildPlugin = useBuildPlugin()
+    const revealArtifact = useRevealBuildArtifact()
 
     // Source code state
     const [selectedFile, setSelectedFile] = useState<JavaSourceFile | null>(null)
@@ -88,8 +89,9 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const [pendingAssetTemplate, setPendingAssetTemplate] = useState<{ id: ServerAssetTemplate; label: string; category: string } | null>(null)
     const [assetToRename, setAssetToRename] = useState<ServerAsset | null>(null)
 
-    // Install state (local for optimistic updates)
-    const [isInstalled, setIsInstalled] = useState(project.isInstalled)
+    // Build output dialog state
+    const [buildResult, setBuildResult] = useState<BuildPluginResult | null>(null)
+    const [showBuildDialog, setShowBuildDialog] = useState(false)
 
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
@@ -98,8 +100,7 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
     const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
-    const isInstalling = installProject.isPending || uninstallProject.isPending
-    const isBuilding = buildProject.isPending
+    const isBuilding = buildPlugin.isPending
 
     // Java class creation handlers
     const handleTemplateSelect = (template: JavaTemplate) => {
@@ -200,26 +201,14 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
         })
     }
 
-    const handleInstall = async () => {
-        await installProject.mutateAsync({
-            projectPath: project.path,
-            projectType: 'plugin',
-        })
-        setIsInstalled(true)
-        onInstallChange?.()
-    }
-
-    const handleUninstall = async () => {
-        if (!project.installedPath) return
-        await uninstallProject.mutateAsync({
-            projectPath: project.installedPath,
-        })
-        setIsInstalled(false)
-        onInstallChange?.()
-    }
-
     const handleBuild = async () => {
-        await buildProject.mutateAsync({ projectPath: project.path })
+        const result = await buildPlugin.mutateAsync({ projectPath: project.path })
+        setBuildResult(result)
+        setShowBuildDialog(true)
+    }
+
+    const handleRevealBuildArtifact = (artifact: { outputPath: string; id: string }) => {
+        revealArtifact.mutate(artifact.id)
     }
 
     const attemptNavigation = (navigationFn: () => void) => {
@@ -317,46 +306,45 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.hymn.openInExplorer(project.path)}
+                        onClick={() => window.hymn.openInEditor(project.path)}
                         className="gap-2"
                     >
-                        <FolderOpen className="h-3.5 w-3.5" />
-                        Open Folder
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open in Editor
                     </Button>
-                    {/* Install/Uninstall Toggle */}
-                    {isInstalled ? (
+                    {canBuild ? (
                         <Button
                             variant="outline"
                             size="sm"
-                            className="gap-2 text-destructive hover:text-destructive"
-                            onClick={handleUninstall}
-                            disabled={isInstalling}
+                            className="gap-2 font-semibold"
+                            onClick={handleBuild}
+                            disabled={isBuilding}
                         >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {isInstalling ? 'Uninstalling...' : 'Uninstall'}
+                            <Play className={cn("h-3.5 w-3.5 fill-current", isBuilding && "animate-pulse")} />
+                            {isBuilding ? 'Building...' : 'Build'}
                         </Button>
                     ) : (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                            onClick={handleInstall}
-                            disabled={isInstalling}
-                        >
-                            <Download className="h-3.5 w-3.5" />
-                            {isInstalling ? 'Installing...' : 'Install for Testing'}
-                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-2 font-semibold opacity-50"
+                                        disabled
+                                    >
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        Build
+                                    </Button>
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Java 17+ is required to build plugins.</p>
+                                <p className="text-xs text-muted-foreground">Configure JDK path in the Create tab.</p>
+                            </TooltipContent>
+                        </Tooltip>
                     )}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 font-semibold"
-                        onClick={handleBuild}
-                        disabled={isBuilding}
-                    >
-                        <Play className={cn("h-3.5 w-3.5 fill-current", isBuilding && "animate-pulse")} />
-                        {isBuilding ? 'Building...' : 'Build'}
-                    </Button>
+                    <DependencyStatus />
                 </div>
             </header>
 
@@ -467,6 +455,15 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
                 }}
                 onDiscard={handleDiscardAndNavigate}
                 fileCount={getDirtyFilePaths().length}
+            />
+
+            {/* Build Output Dialog */}
+            <BuildOutputDialog
+                isOpen={showBuildDialog}
+                onClose={() => setShowBuildDialog(false)}
+                result={buildResult}
+                type="plugin"
+                onRevealArtifact={buildResult?.artifact ? handleRevealBuildArtifact : undefined}
             />
         </div>
     )

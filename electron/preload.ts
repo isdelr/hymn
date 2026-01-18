@@ -54,6 +54,7 @@ const api: HymnApi = {
   importWorldMods: () => ipcRenderer.invoke('hymn:import-world-mods'),
   // Projects folder management
   listProjects: () => ipcRenderer.invoke('hymn:list-projects'),
+  deleteProject: (options) => ipcRenderer.invoke('hymn:delete-project', options),
   installProject: (options) => ipcRenderer.invoke('hymn:install-project', options),
   uninstallProject: (options) => ipcRenderer.invoke('hymn:uninstall-project', options),
   // Package mod (zip creation)
@@ -67,6 +68,17 @@ const api: HymnApi = {
   listJavaSources: (options) => ipcRenderer.invoke('hymn:list-java-sources', options),
   createJavaClass: (options) => ipcRenderer.invoke('hymn:create-java-class', options),
   deleteJavaClass: (options) => ipcRenderer.invoke('hymn:delete-java-class', options),
+  // Build workflow methods
+  checkDependencies: () => ipcRenderer.invoke('hymn:check-dependencies'),
+  buildPlugin: (options) => ipcRenderer.invoke('hymn:build-plugin', options),
+  buildPack: (options) => ipcRenderer.invoke('hymn:build-pack', options),
+  listBuildArtifacts: () => ipcRenderer.invoke('hymn:list-build-artifacts'),
+  deleteBuildArtifact: (options) => ipcRenderer.invoke('hymn:delete-build-artifact', options),
+  clearAllBuildArtifacts: () => ipcRenderer.invoke('hymn:clear-all-build-artifacts'),
+  revealBuildArtifact: (artifactId) => ipcRenderer.invoke('hymn:reveal-build-artifact', artifactId),
+  copyArtifactToMods: (artifactId) => ipcRenderer.invoke('hymn:copy-artifact-to-mods', artifactId),
+  openBuildsFolder: () => ipcRenderer.invoke('hymn:open-builds-folder'),
+  openInEditor: (path: string) => ipcRenderer.invoke('hymn:open-in-editor', path),
 }
 
 const themeApi: HymnThemeApi = {
@@ -89,6 +101,10 @@ const settingsApi: HymnSettingsApi = {
   getDefaultExportPath: () => ipcRenderer.invoke('settings:getDefaultExportPath'),
   setDefaultExportPath: (path: string | null) => ipcRenderer.invoke('settings:setDefaultExportPath', path),
   selectDefaultExportPath: () => ipcRenderer.invoke('settings:selectDefaultExportPath'),
+  // JDK path configuration
+  getJdkPath: () => ipcRenderer.invoke('settings:getJdkPath'),
+  setJdkPath: (path: string | null) => ipcRenderer.invoke('settings:setJdkPath', path),
+  selectJdkPath: () => ipcRenderer.invoke('settings:selectJdkPath'),
 }
 
 contextBridge.exposeInMainWorld('hymn', api)

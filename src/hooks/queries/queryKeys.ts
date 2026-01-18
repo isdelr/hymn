@@ -37,5 +37,12 @@ export const queryKeys = {
     theme: ['settings', 'theme'] as const,
     modSortOrder: ['settings', 'modSortOrder'] as const,
     defaultExportPath: ['settings', 'defaultExportPath'] as const,
+    jdkPath: ['settings', 'jdkPath'] as const,
+  },
+
+  builds: {
+    all: ['builds'] as const,
+    artifacts: ['builds', 'artifacts'] as const,
+    dependencies: ['builds', 'dependencies'] as const,
   },
 }

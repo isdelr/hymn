@@ -1,12 +1,20 @@
 import type { ProjectEntry } from '@/shared/hymn-types'
 import { Badge } from '@/components/ui/badge'
-import { FolderOpen, Package, Puzzle, CheckCircle, HardDrive } from 'lucide-react'
+import { FolderOpen, Package, Puzzle, CheckCircle, HardDrive, MoreVertical, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface ProjectCardProps {
     project: ProjectEntry
     onOpen: (project: ProjectEntry) => void
     onExplore: (path: string) => void
+    onDelete: (project: ProjectEntry) => void
 }
 
 const formatSize = (bytes: number | undefined): string | null => {
@@ -16,7 +24,7 @@ const formatSize = (bytes: number | undefined): string | null => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ProjectCard({ project, onOpen, onExplore }: ProjectCardProps) {
+export function ProjectCard({ project, onOpen, onExplore, onDelete }: ProjectCardProps) {
     const isPlugin = project.type === 'plugin'
     const ProjectIcon = isPlugin ? Puzzle : Package
 
@@ -29,7 +37,7 @@ export function ProjectCard({ project, onOpen, onExplore }: ProjectCardProps) {
             onClick={() => onOpen(project)}
         >
             <div className="p-4">
-                {/* Header row: Icon, Name, Folder button */}
+                {/* Header row: Icon, Name, Actions menu */}
                 <div className="flex items-center gap-3">
                     <div className={cn(
                         'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
@@ -51,17 +59,31 @@ export function ProjectCard({ project, onOpen, onExplore }: ProjectCardProps) {
                         ) : null}
                     </div>
 
-                    {/* Folder button */}
-                    <button
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onExplore(project.path)
-                        }}
-                        title="Open in Explorer"
-                    >
-                        <FolderOpen className="h-4 w-4" />
-                    </button>
+                    {/* Actions menu */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <MoreVertical className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem onClick={() => onExplore(project.path)}>
+                                <FolderOpen className="mr-2 h-4 w-4" />
+                                Open in Explorer
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={() => onDelete(project)}
+                                className="text-destructive focus:text-destructive"
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Project
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
 
                 {/* Info row: Type, Version, Size, Installed status */}

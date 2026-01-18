@@ -10,6 +10,7 @@ export { useCreateJavaClass, useDeleteJavaFile, useSaveJavaFile } from './useJav
 export {
   useCreatePack,
   useCreatePlugin,
+  useDeleteProject,
   useInstallProject,
   useUninstallProject,
   useBuildProject,
@@ -23,3 +24,14 @@ export {
   useSelectInstallPath,
 } from './useSettingsMutations'
 export { useSelectWorld, useExportWorldMods, useImportWorldMods } from './useWorldMutations'
+export {
+  useBuildPlugin,
+  useBuildPack,
+  useDeleteBuildArtifact,
+  useClearAllBuildArtifacts,
+  useCopyArtifactToMods,
+  useRevealBuildArtifact,
+  useSetJdkPath,
+  useSelectJdkPath,
+  useOpenBuildsFolder,
+} from './useBuildMutations'

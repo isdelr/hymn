@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { queryKeys } from '../queries'
-import type { CreatePackOptions, CreatePluginOptions } from '@/shared/hymn-types'
+import type { CreatePackOptions, CreatePluginOptions, DeleteProjectOptions } from '@/shared/hymn-types'
 
 export function useCreatePack() {
   const queryClient = useQueryClient()
@@ -33,6 +33,27 @@ export function useCreatePlugin() {
     },
     onError: () => {
       toast.error('Failed to create plugin')
+    },
+  })
+}
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (options: DeleteProjectOptions) => {
+      return await window.hymn.deleteProject(options)
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success('Project deleted')
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.all })
+      } else {
+        toast.error(result.error || 'Failed to delete project')
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete project')
     },
   })
 }

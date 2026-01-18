@@ -299,6 +299,69 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       relativePath: 'com/example/TestClass.java',
     }),
     deleteJavaClass: vi.fn().mockResolvedValue({ success: true }),
+    checkDependencies: vi.fn().mockResolvedValue({
+      java: {
+        status: 'found',
+        jdkPath: 'C:\\Program Files\\Java\\jdk-21',
+        version: '21.0.1',
+        issues: [],
+        downloadInstructions: '',
+      },
+      canBuildPlugins: true,
+      canBuildPacks: true,
+    }),
+    buildPlugin: vi.fn().mockResolvedValue({
+      success: true,
+      exitCode: 0,
+      output: 'Build successful',
+      durationMs: 5000,
+      truncated: false,
+      artifact: {
+        id: 'test-artifact-1',
+        projectName: 'TestPlugin',
+        version: '1.0.0',
+        outputPath: 'C:\\Users\\test\\AppData\\hymn\\builds\\plugins\\TestPlugin\\TestPlugin-1.0.0.jar',
+        builtAt: '2026-01-01T00:00:00Z',
+        durationMs: 5000,
+        fileSize: 102400,
+        artifactType: 'jar',
+      },
+    }),
+    buildPack: vi.fn().mockResolvedValue({
+      success: true,
+      output: 'Build successful',
+      durationMs: 1000,
+      artifact: {
+        id: 'test-artifact-2',
+        projectName: 'TestPack',
+        version: '1.0.0',
+        outputPath: 'C:\\Users\\test\\AppData\\hymn\\builds\\packs\\TestPack\\TestPack-1.0.0.zip',
+        builtAt: '2026-01-01T00:00:00Z',
+        durationMs: 1000,
+        fileSize: 51200,
+        artifactType: 'zip',
+      },
+    }),
+    listBuildArtifacts: vi.fn().mockResolvedValue({
+      artifacts: [],
+    }),
+    deleteBuildArtifact: vi.fn().mockResolvedValue({
+      success: true,
+    }),
+    clearAllBuildArtifacts: vi.fn().mockResolvedValue({
+      success: true,
+      deletedCount: 0,
+    }),
+    revealBuildArtifact: vi.fn().mockResolvedValue(undefined),
+    copyArtifactToMods: vi.fn().mockResolvedValue({
+      success: true,
+      destinationPath: 'C:\\Hytale\\UserData\\Mods\\TestPlugin-1.0.0.jar',
+    }),
+    openBuildsFolder: vi.fn().mockResolvedValue(undefined),
+    openInEditor: vi.fn().mockResolvedValue(undefined),
+    deleteProject: vi.fn().mockResolvedValue({
+      success: true,
+    }),
   }
 
   const merged = { ...api, ...overrides } as HymnApi

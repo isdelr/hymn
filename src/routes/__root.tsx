@@ -13,7 +13,7 @@ const sections = [
   {
     to: '/' as const,
     label: 'Mods',
-    description: 'Manage your mods and profiles',
+    description: 'Manage your mods present in your Hytale installation',
     icon: Boxes,
   },
   {

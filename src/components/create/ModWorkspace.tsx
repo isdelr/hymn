@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { ProjectEntry, ServerAsset, ServerAssetTemplate } from '@/shared/hymn-types'
+import type { ProjectEntry, ServerAsset, ServerAssetTemplate, BuildPackResult } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import {
     ChevronLeft,
@@ -10,9 +10,8 @@ import {
     Users,
     Music,
     Monitor,
-    Archive,
-    Download,
-    Trash2,
+    ExternalLink,
+    Play,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -25,6 +24,7 @@ import { AssetDetails } from './AssetDetails'
 import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
 import { PluginWorkspace } from './PluginWorkspace'
+import { BuildOutputDialog } from './BuildOutputDialog'
 
 // React Query hooks
 import { useAssets } from '@/hooks/queries'
@@ -32,15 +32,13 @@ import {
     useCreateAsset,
     useDeleteAsset,
     useRenameAsset,
-    useInstallProject,
-    useUninstallProject,
-    usePackageProject,
+    useBuildPack,
+    useRevealBuildArtifact,
 } from '@/hooks/mutations'
 
 interface ModWorkspaceProps {
     project: ProjectEntry
     onBack?: () => void
-    onInstallChange?: () => void
 }
 
 const NAV_ITEMS = [
@@ -52,7 +50,7 @@ const NAV_ITEMS = [
     { id: 'ui', label: 'Interface', icon: Monitor },
 ]
 
-export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceProps) {
+export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
     const navigate = useNavigate()
 
     // React Query data - always call hooks unconditionally
@@ -62,9 +60,8 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
     const createAsset = useCreateAsset()
     const deleteAsset = useDeleteAsset()
     const renameAsset = useRenameAsset()
-    const installProject = useInstallProject()
-    const uninstallProject = useUninstallProject()
-    const packageProject = usePackageProject()
+    const buildPack = useBuildPack()
+    const revealArtifact = useRevealBuildArtifact()
 
     // Navigation State
     const [activeCategory, setActiveCategory] = useState<string>('all')
@@ -76,8 +73,9 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
     const [pendingTemplate, setPendingTemplate] = useState<{ id: ServerAssetTemplate; label: string; category: string } | null>(null)
     const [assetToRename, setAssetToRename] = useState<ServerAsset | null>(null)
 
-    // Install state (local for optimistic updates)
-    const [isInstalled, setIsInstalled] = useState(project.isInstalled)
+    // Build output dialog state
+    const [buildResult, setBuildResult] = useState<BuildPackResult | null>(null)
+    const [showBuildDialog, setShowBuildDialog] = useState(false)
 
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
@@ -93,11 +91,10 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
 
     // Plugin projects use a dedicated workspace with Java source editing
     if (project.type === 'plugin') {
-        return <PluginWorkspace project={project} onBack={handleNavigateBack} onInstallChange={onInstallChange} />
+        return <PluginWorkspace project={project} onBack={handleNavigateBack} />
     }
 
-    const isInstalling = installProject.isPending || uninstallProject.isPending
-    const isPackaging = packageProject.isPending
+    const isBuilding = buildPack.isPending
 
     const attemptNavigation = (navigationFn: () => void) => {
         if (hasAnyDirtyFiles()) {
@@ -166,26 +163,14 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
         setIsNameDialogOpen(true)
     }
 
-    const handleInstall = async () => {
-        await installProject.mutateAsync({
-            projectPath: project.path,
-            projectType: 'pack',
-        })
-        setIsInstalled(true)
-        onInstallChange?.()
+    const handleBuild = async () => {
+        const result = await buildPack.mutateAsync({ projectPath: project.path })
+        setBuildResult(result)
+        setShowBuildDialog(true)
     }
 
-    const handleUninstall = async () => {
-        if (!project.installedPath) return
-        await uninstallProject.mutateAsync({
-            projectPath: project.installedPath,
-        })
-        setIsInstalled(false)
-        onInstallChange?.()
-    }
-
-    const handlePackage = async () => {
-        await packageProject.mutateAsync({ projectPath: project.path })
+    const handleRevealBuildArtifact = (artifact: { outputPath: string; id: string }) => {
+        revealArtifact.mutate(artifact.id)
     }
 
     const handleConfirmRename = async (newName: string) => {
@@ -258,40 +243,25 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* Install/Uninstall Toggle */}
-                    {isInstalled ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-2 text-destructive hover:text-destructive"
-                            onClick={handleUninstall}
-                            disabled={isInstalling}
-                        >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {isInstalling ? 'Uninstalling...' : 'Uninstall'}
-                        </Button>
-                    ) : (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                            onClick={handleInstall}
-                            disabled={isInstalling}
-                        >
-                            <Download className="h-3.5 w-3.5" />
-                            {isInstalling ? 'Installing...' : 'Install for Testing'}
-                        </Button>
-                    )}
-                    {/* Package Button (for asset packs) */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.hymn.openInEditor(project.path)}
+                        className="gap-2"
+                    >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open in Editor
+                    </Button>
+                    {/* Build Button (creates ZIP in builds folder) */}
                     <Button
                         variant="outline"
                         size="sm"
                         className="gap-2 font-semibold"
-                        onClick={handlePackage}
-                        disabled={isPackaging}
+                        onClick={handleBuild}
+                        disabled={isBuilding}
                     >
-                        <Archive className="h-3.5 w-3.5" />
-                        {isPackaging ? 'Packaging...' : 'Package'}
+                        <Play className={cn("h-3.5 w-3.5 fill-current", isBuilding && "animate-pulse")} />
+                        {isBuilding ? 'Building...' : 'Build'}
                     </Button>
                 </div>
             </header>
@@ -355,6 +325,15 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
                 }}
                 onDiscard={handleDiscardAndNavigate}
                 fileCount={getDirtyFilePaths().length}
+            />
+
+            {/* Build Output Dialog */}
+            <BuildOutputDialog
+                isOpen={showBuildDialog}
+                onClose={() => setShowBuildDialog(false)}
+                result={buildResult}
+                type="pack"
+                onRevealArtifact={buildResult?.artifact ? handleRevealBuildArtifact : undefined}
             />
         </div>
     )

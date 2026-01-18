@@ -172,7 +172,7 @@ export function ModsSection() {
       <div className="flex flex-wrap items-center gap-3 mb-10">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Globe className="h-4 w-4" />
-          <span>Managing mods for:</span>
+          <span>Managing mods for world:</span>
         </div>
         {hasWorlds ? (
           <Select

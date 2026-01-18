@@ -7,10 +7,13 @@ import {
   Layers,
   RefreshCw,
   HelpCircle,
+  Archive,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ProjectEntry } from '@/shared/hymn-types'
 import { ProjectCard } from '@/components/create/ProjectCard'
+import { DependencyBanner } from '@/components/create/DependencyBanner'
+import { BuildsPanel } from '@/components/create/BuildsPanel'
 import {
   Dialog,
   DialogContent,
@@ -18,16 +21,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 // React Query hooks
 import { useInstallInfo, useProjects } from '@/hooks/queries'
-import { useCreatePack, useCreatePlugin } from '@/hooks/mutations'
+import { useCreatePack, useCreatePlugin, useDeleteProject } from '@/hooks/mutations'
 
 export const Route = createFileRoute('/create/')({
   component: CreateIndexPage,
@@ -49,6 +63,7 @@ function InfoTooltip({ children }: { children: React.ReactNode }) {
 }
 
 type ProjectType = 'pack' | 'plugin'
+type CreateTab = 'projects' | 'builds'
 
 function CreateIndexPage() {
   // React Query data
@@ -58,11 +73,14 @@ function CreateIndexPage() {
   // Mutations
   const createPack = useCreatePack()
   const createPlugin = useCreatePlugin()
+  const deleteProject = useDeleteProject()
 
   const navigate = useNavigate()
 
+  const [activeTab, setActiveTab] = useState<CreateTab>('projects')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [projectType, setProjectType] = useState<ProjectType>('pack')
+  const [projectToDelete, setProjectToDelete] = useState<ProjectEntry | null>(null)
 
   // Common Creation State
   const [projectName, setProjectName] = useState('')
@@ -138,6 +156,12 @@ function CreateIndexPage() {
     setProjectType('pack')
   }
 
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return
+    await deleteProject.mutateAsync({ projectPath: projectToDelete.path })
+    setProjectToDelete(null)
+  }
+
   const handleOpenProject = (project: ProjectEntry) => {
     navigate({ to: '/create/$projectId', params: { projectId: project.id } })
   }
@@ -157,7 +181,38 @@ function CreateIndexPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Dependency Banner */}
+      <DependencyBanner />
+
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-1 p-1 w-fit rounded-lg bg-muted/50">
+        <button
+          onClick={() => setActiveTab('projects')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
+            activeTab === 'projects'
+              ? "bg-background shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Package className="h-4 w-4" />
+          Projects
+        </button>
+        <button
+          onClick={() => setActiveTab('builds')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
+            activeTab === 'builds'
+              ? "bg-background shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Archive className="h-4 w-4" />
+          Builds
+        </button>
+      </div>
+
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="sm:max-w-[480px] border-border/50 bg-card">
           <DialogHeader>
@@ -315,63 +370,90 @@ function CreateIndexPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">My Projects</h2>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsCreateDialogOpen(true)}
-              className="h-8 gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Project
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => loadProjects()}
-              disabled={isLoadingProjects}
-              className="h-8 gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoadingProjects ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {isLoadingProjects && projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
-            <p className="text-sm text-muted-foreground">Loading projects...</p>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
-            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
-              <Package className="h-7 w-7 text-muted-foreground/50" />
+      {/* Tab Content */}
+      {activeTab === 'projects' ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">My Projects</h2>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsCreateDialogOpen(true)}
+                className="h-8 gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Project
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => loadProjects()}
+                disabled={isLoadingProjects}
+                className="h-8 gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoadingProjects ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
             </div>
-            <h3 className="text-base font-medium mb-1">No projects yet</h3>
-            <p className="text-sm text-muted-foreground max-w-xs mb-5">
-              Create a pack or plugin to get started.
-            </p>
-            <Button variant="outline" size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-              Create Project
-            </Button>
           </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onOpen={handleOpenProject}
-                onExplore={(path) => window.hymn.openInExplorer(path)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+
+          {isLoadingProjects && projects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
+              <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
+              <p className="text-sm text-muted-foreground">Loading projects...</p>
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
+              <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Package className="h-7 w-7 text-muted-foreground/50" />
+              </div>
+              <h3 className="text-base font-medium mb-1">No projects yet</h3>
+              <p className="text-sm text-muted-foreground max-w-xs mb-5">
+                Create a pack or plugin to get started.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+                Create Project
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {projects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  onOpen={handleOpenProject}
+                  onExplore={(path) => window.hymn.openInExplorer(path)}
+                  onDelete={setProjectToDelete}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <BuildsPanel />
+      )}
+
+      {/* Delete Project Confirmation Dialog */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{projectToDelete?.name}</strong>? This will permanently remove all project files. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

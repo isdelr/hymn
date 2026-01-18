@@ -68,7 +68,6 @@ function ProjectWorkspacePage() {
   return (
     <ModWorkspace
       project={project}
-      onInstallChange={loadProject}
     />
   )
 }

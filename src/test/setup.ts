@@ -25,6 +25,9 @@ if (!window.hymnSettings) {
     getDefaultExportPath: vi.fn().mockResolvedValue(null),
     setDefaultExportPath: vi.fn().mockResolvedValue(undefined),
     selectDefaultExportPath: vi.fn().mockResolvedValue(null),
+    getJdkPath: vi.fn().mockResolvedValue(null),
+    setJdkPath: vi.fn().mockResolvedValue(undefined),
+    selectJdkPath: vi.fn().mockResolvedValue(null),
   }
 }
 

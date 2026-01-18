@@ -453,6 +453,95 @@ export interface AddModResult {
   addedPaths: string[]
 }
 
+// Build artifact types
+export type BuildArtifactType = 'jar' | 'zip'
+
+export interface BuildArtifact {
+  id: string
+  projectName: string
+  version: string
+  outputPath: string
+  builtAt: string // ISO date string
+  durationMs: number
+  fileSize: number
+  artifactType: BuildArtifactType
+}
+
+export interface BuildArtifactListResult {
+  artifacts: BuildArtifact[]
+}
+
+export interface DeleteBuildArtifactOptions {
+  artifactId: string
+}
+
+export interface DeleteBuildArtifactResult {
+  success: boolean
+}
+
+export interface ClearAllBuildArtifactsResult {
+  success: boolean
+  deletedCount: number
+}
+
+export interface CopyArtifactToModsResult {
+  success: boolean
+  destinationPath: string
+}
+
+// Java dependency detection types
+export type JavaDependencyStatus = 'found' | 'missing' | 'incompatible'
+
+export interface JavaDependencyInfo {
+  status: JavaDependencyStatus
+  jdkPath: string | null
+  version: string | null
+  issues: string[]
+  downloadInstructions: string
+}
+
+export interface CheckDependenciesResult {
+  java: JavaDependencyInfo
+  canBuildPlugins: boolean
+  canBuildPacks: boolean // Always true - no dependencies needed
+}
+
+// Enhanced build types
+export interface BuildPluginOptions {
+  projectPath: string
+  task?: string
+}
+
+export interface BuildPluginResult {
+  success: boolean
+  exitCode: number | null
+  output: string
+  durationMs: number
+  truncated: boolean
+  artifact: BuildArtifact | null
+}
+
+export interface BuildPackOptions {
+  projectPath: string
+}
+
+export interface BuildPackResult {
+  success: boolean
+  output: string
+  durationMs: number
+  artifact: BuildArtifact | null
+}
+
+// Delete project
+export interface DeleteProjectOptions {
+  projectPath: string
+}
+
+export interface DeleteProjectResult {
+  success: boolean
+  error?: string
+}
+
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
@@ -492,6 +581,7 @@ export interface HymnApi {
   importWorldMods: () => Promise<ImportWorldModsResult>
   // Projects folder management
   listProjects: () => Promise<ListProjectsResult>
+  deleteProject: (options: DeleteProjectOptions) => Promise<DeleteProjectResult>
   installProject: (options: InstallProjectOptions) => Promise<InstallProjectResult>
   uninstallProject: (options: UninstallProjectOptions) => Promise<UninstallProjectResult>
   // Package mod (zip creation)
@@ -505,6 +595,18 @@ export interface HymnApi {
   listJavaSources: (options: ListJavaSourcesOptions) => Promise<ListJavaSourcesResult>
   createJavaClass: (options: CreateJavaClassOptions) => Promise<CreateJavaClassResult>
   deleteJavaClass: (options: { projectPath: string; relativePath: string }) => Promise<{ success: boolean }>
+  // Build workflow methods
+  checkDependencies: () => Promise<CheckDependenciesResult>
+  buildPlugin: (options: BuildPluginOptions) => Promise<BuildPluginResult>
+  buildPack: (options: BuildPackOptions) => Promise<BuildPackResult>
+  listBuildArtifacts: () => Promise<BuildArtifactListResult>
+  deleteBuildArtifact: (options: DeleteBuildArtifactOptions) => Promise<DeleteBuildArtifactResult>
+  clearAllBuildArtifacts: () => Promise<ClearAllBuildArtifactsResult>
+  revealBuildArtifact: (artifactId: string) => Promise<void>
+  copyArtifactToMods: (artifactId: string) => Promise<CopyArtifactToModsResult>
+  openBuildsFolder: () => Promise<void>
+  // Open file/folder in default editor (uses OS "Open With" dialog)
+  openInEditor: (path: string) => Promise<void>
 }
 
 // Window control API for frameless window
@@ -535,6 +637,10 @@ export interface HymnSettingsApi {
   getDefaultExportPath: () => Promise<string | null>
   setDefaultExportPath: (path: string | null) => Promise<void>
   selectDefaultExportPath: () => Promise<string | null>
+  // JDK path configuration
+  getJdkPath: () => Promise<string | null>
+  setJdkPath: (path: string | null) => Promise<void>
+  selectJdkPath: () => Promise<string | null>
 }
 
 // Global window augmentation
