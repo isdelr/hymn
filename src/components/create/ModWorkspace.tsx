@@ -20,6 +20,7 @@ import { AssetGrid } from './AssetGrid'
 import { AssetDetails } from './AssetDetails'
 import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
+import { PluginWorkspace } from './PluginWorkspace'
 
 interface ModWorkspaceProps {
     project: ModEntry
@@ -36,6 +37,11 @@ const NAV_ITEMS = [
 ]
 
 export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
+    // Plugin projects use a dedicated workspace with Java source editing
+    if (project.type === 'plugin') {
+        return <PluginWorkspace project={project} onBack={onBack} />
+    }
+
     // Navigation State
     const [activeCategory, setActiveCategory] = useState<string>('all')
     const [selectedAsset, setSelectedAsset] = useState<ServerAsset | null>(null)

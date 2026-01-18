@@ -276,6 +276,18 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     readFile: vi.fn().mockResolvedValue(''),
     saveFile: vi.fn().mockResolvedValue({ success: true }),
     checkPathExists: vi.fn().mockResolvedValue(true),
+    // Java source file management for plugins
+    listJavaSources: vi.fn().mockResolvedValue({
+      sources: [],
+      basePackage: 'com.example',
+      sourceRoot: 'C:\\Hytale\\mods\\TestPlugin\\src\\main\\java',
+    }),
+    createJavaClass: vi.fn().mockResolvedValue({
+      success: true,
+      filePath: 'C:\\Hytale\\mods\\TestPlugin\\src\\main\\java\\com\\example\\TestClass.java',
+      relativePath: 'com/example/TestClass.java',
+    }),
+    deleteJavaClass: vi.fn().mockResolvedValue({ success: true }),
   }
 
   const merged = { ...api, ...overrides } as HymnApi

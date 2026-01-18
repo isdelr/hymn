@@ -44,6 +44,10 @@ const api: HymnApi = {
   readFile: (path: string) => ipcRenderer.invoke('hymn:read-file', path),
   saveFile: (path: string, content: string) => ipcRenderer.invoke('hymn:save-file', path, content),
   checkPathExists: (path: string) => ipcRenderer.invoke('hymn:check-path-exists', path),
+  // Java source file management for plugins
+  listJavaSources: (options) => ipcRenderer.invoke('hymn:list-java-sources', options),
+  createJavaClass: (options) => ipcRenderer.invoke('hymn:create-java-class', options),
+  deleteJavaClass: (options) => ipcRenderer.invoke('hymn:delete-java-class', options),
 }
 
 contextBridge.exposeInMainWorld('hymn', api)

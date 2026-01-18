@@ -92,6 +92,45 @@ export type ServerAssetTemplate =
   | 'ui' | 'ui_page'
   | 'category' | 'empty'
 
+// Java class templates for plugins
+export type JavaClassTemplate =
+  | 'command'           // Chat command handler
+  | 'event_listener'    // Game event listener
+  | 'component'         // Entity component
+  | 'custom_class'      // Empty class template
+
+export interface CreateJavaClassOptions {
+  projectPath: string          // Root path of the plugin project
+  packagePath: string          // Relative package path (e.g., "commands")
+  className: string            // Class name (e.g., "HelloCommand")
+  template: JavaClassTemplate
+}
+
+export interface CreateJavaClassResult {
+  success: boolean
+  filePath: string
+  relativePath: string
+}
+
+export interface JavaSourceFile {
+  id: string
+  name: string                 // ClassName.java
+  className: string
+  packageName: string          // com.example.myplugin.commands
+  relativePath: string
+  absolutePath: string
+}
+
+export interface ListJavaSourcesOptions {
+  projectPath: string
+}
+
+export interface ListJavaSourcesResult {
+  sources: JavaSourceFile[]
+  basePackage: string
+  sourceRoot: string
+}
+
 export interface CreateServerAssetOptions {
   path: string
   destination: string
@@ -422,4 +461,8 @@ export interface HymnApi {
   readFile: (path: string) => Promise<string>
   saveFile: (path: string, content: string) => Promise<{ success: boolean }>
   checkPathExists: (path: string) => Promise<boolean>
+  // Java source file management for plugins
+  listJavaSources: (options: ListJavaSourcesOptions) => Promise<ListJavaSourcesResult>
+  createJavaClass: (options: CreateJavaClassOptions) => Promise<CreateJavaClassResult>
+  deleteJavaClass: (options: { projectPath: string; relativePath: string }) => Promise<{ success: boolean }>
 }

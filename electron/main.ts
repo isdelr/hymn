@@ -70,6 +70,13 @@ import type {
   FileNode,
   ListProjectFilesOptions,
   ListProjectFilesResult,
+  // Java source file types
+  JavaClassTemplate,
+  CreateJavaClassOptions,
+  CreateJavaClassResult,
+  JavaSourceFile,
+  ListJavaSourcesOptions,
+  ListJavaSourcesResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -959,12 +966,17 @@ async function scanModsWithWorld(worldId?: string): Promise<ScanResult> {
 async function readManifestFromFolder(folderPath: string) {
   const rootManifest = path.join(folderPath, 'manifest.json')
   const serverManifest = path.join(folderPath, 'Server', 'manifest.json')
+  // Plugin projects store manifest in src/main/resources
+  const pluginManifest = path.join(folderPath, 'src', 'main', 'resources', 'manifest.json')
 
   if (await pathExists(rootManifest)) {
     return readJsonFile(rootManifest)
   }
   if (await pathExists(serverManifest)) {
     return readJsonFile(serverManifest)
+  }
+  if (await pathExists(pluginManifest)) {
+    return readJsonFile(pluginManifest)
   }
   return null
 }
@@ -1234,6 +1246,9 @@ async function findManifestPath(folderPath: string) {
   if (await pathExists(rootManifest)) return rootManifest
   const serverManifest = path.join(folderPath, 'Server', 'manifest.json')
   if (await pathExists(serverManifest)) return serverManifest
+  // Plugin projects store manifest in src/main/resources
+  const pluginManifest = path.join(folderPath, 'src', 'main', 'resources', 'manifest.json')
+  if (await pathExists(pluginManifest)) return pluginManifest
   return null
 }
 
@@ -2792,6 +2807,7 @@ load_user_mods=false
   // build.gradle
   const buildGradle = `plugins {
     id 'java'
+    id 'idea'
 }
 
 group = project.maven_group
@@ -3271,6 +3287,255 @@ public class ${mainClassName} extends JavaPlugin {
   }
 }
 
+// ============================================================================
+// JAVA CLASS TEMPLATE BUILDERS
+// ============================================================================
+
+type JavaClassTemplateBuilder = (packageName: string, className: string) => string
+
+const JAVA_CLASS_TEMPLATE_BUILDERS: Record<JavaClassTemplate, JavaClassTemplateBuilder> = {
+  command: (packageName, className) => {
+    const commandName = className.replace(/Command$/i, '').toLowerCase()
+    return `package ${packageName};
+
+import com.hypixel.hytale.server.core.command.ArgumentReader;
+import com.hypixel.hytale.server.core.command.ChatContext;
+import com.hypixel.hytale.server.core.command.Command;
+import com.hypixel.hytale.server.core.command.CommandResult;
+
+import javax.annotation.Nonnull;
+
+/**
+ * A chat command handler for "/${commandName}".
+ */
+public class ${className} implements Command {
+
+    @Nonnull
+    @Override
+    public String getName() {
+        return "${commandName}";
+    }
+
+    @Nonnull
+    @Override
+    public CommandResult execute(@Nonnull ChatContext context, @Nonnull ArgumentReader args) {
+        context.sendMessage("Hello from ${className}!");
+        return CommandResult.success();
+    }
+}
+`
+  },
+
+  event_listener: (packageName, className) => {
+    return `package ${packageName};
+
+import com.hypixel.hytale.server.core.event.EventListener;
+import com.hypixel.hytale.server.core.event.player.PlayerJoinEvent;
+
+import javax.annotation.Nonnull;
+
+/**
+ * Listens for game events and handles them.
+ */
+public class ${className} implements EventListener {
+
+    @Override
+    public void onPlayerJoin(@Nonnull PlayerJoinEvent event) {
+        // Called when a player joins the server
+    }
+}
+`
+  },
+
+  component: (packageName, className) => {
+    return `package ${packageName};
+
+import com.hypixel.hytale.server.core.entity.component.EntityComponent;
+
+/**
+ * A custom entity component.
+ */
+public class ${className} extends EntityComponent {
+
+    @Override
+    protected void onAttach() {
+        // Called when this component is attached to an entity
+    }
+
+    @Override
+    protected void onDetach() {
+        // Called when this component is detached from an entity
+    }
+}
+`
+  },
+
+  custom_class: (packageName, className) => {
+    return `package ${packageName};
+
+/**
+ * ${className}
+ */
+public class ${className} {
+
+    public ${className}() {
+        // Constructor
+    }
+}
+`
+  },
+}
+
+async function extractPluginPackageInfo(projectPath: string): Promise<{ basePackage: string; sourceRoot: string } | null> {
+  const resourcesManifestPath = path.join(projectPath, 'src', 'main', 'resources', 'manifest.json')
+
+  if (!(await pathExists(resourcesManifestPath))) {
+    return null
+  }
+
+  try {
+    const content = await fs.readFile(resourcesManifestPath, 'utf-8')
+    const manifest = JSON.parse(content) as Record<string, unknown>
+    const mainClass = manifest.Main as string | undefined
+
+    if (!mainClass) {
+      return null
+    }
+
+    // Extract package from Main class (e.g., "com.example.MyPlugin" -> "com.example")
+    const lastDot = mainClass.lastIndexOf('.')
+    const basePackage = lastDot > 0 ? mainClass.substring(0, lastDot) : mainClass
+
+    const sourceRoot = path.join(projectPath, 'src', 'main', 'java')
+    return { basePackage, sourceRoot }
+  } catch {
+    return null
+  }
+}
+
+async function listJavaSources(options: ListJavaSourcesOptions): Promise<ListJavaSourcesResult> {
+  const packageInfo = await extractPluginPackageInfo(options.projectPath)
+
+  if (!packageInfo) {
+    return { sources: [], basePackage: '', sourceRoot: '' }
+  }
+
+  const { basePackage, sourceRoot } = packageInfo
+  const sources: JavaSourceFile[] = []
+
+  async function scanDirectory(dirPath: string, packagePrefix: string) {
+    if (!(await pathExists(dirPath))) {
+      return
+    }
+
+    const entries = await fs.readdir(dirPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name)
+
+      if (entry.isDirectory()) {
+        const subPackage = packagePrefix ? `${packagePrefix}.${entry.name}` : entry.name
+        await scanDirectory(fullPath, subPackage)
+      } else if (entry.isFile() && entry.name.endsWith('.java')) {
+        const className = entry.name.replace(/\.java$/, '')
+        const relativePath = path.relative(sourceRoot, fullPath).replace(/\\/g, '/')
+
+        sources.push({
+          id: relativePath,
+          name: entry.name,
+          className,
+          packageName: packagePrefix || basePackage,
+          relativePath,
+          absolutePath: fullPath,
+        })
+      }
+    }
+  }
+
+  // Start scanning from the base package directory
+  const basePackagePath = path.join(sourceRoot, basePackage.replace(/\./g, '/'))
+  await scanDirectory(basePackagePath, basePackage)
+
+  // Sort by package name, then class name
+  sources.sort((a, b) => {
+    const pkgCompare = a.packageName.localeCompare(b.packageName)
+    if (pkgCompare !== 0) return pkgCompare
+    return a.className.localeCompare(b.className)
+  })
+
+  return { sources, basePackage, sourceRoot }
+}
+
+async function createJavaClass(options: CreateJavaClassOptions): Promise<CreateJavaClassResult> {
+  const packageInfo = await extractPluginPackageInfo(options.projectPath)
+
+  if (!packageInfo) {
+    throw new Error('Could not determine plugin package structure. Is this a valid plugin project?')
+  }
+
+  const { basePackage, sourceRoot } = packageInfo
+
+  // Validate class name (PascalCase)
+  if (!/^[A-Z][a-zA-Z0-9]*$/.test(options.className)) {
+    throw new Error('Class name must be in PascalCase (e.g., MyClass, HelloCommand)')
+  }
+
+  // Build the full package name
+  const fullPackage = options.packagePath
+    ? `${basePackage}.${options.packagePath.replace(/\//g, '.')}`
+    : basePackage
+
+  // Build the file path
+  const packageDir = path.join(sourceRoot, fullPackage.replace(/\./g, '/'))
+  const filePath = path.join(packageDir, `${options.className}.java`)
+  const relativePath = path.relative(sourceRoot, filePath).replace(/\\/g, '/')
+
+  // Check if file already exists
+  if (await pathExists(filePath)) {
+    throw new Error(`A class named "${options.className}" already exists in package "${fullPackage}"`)
+  }
+
+  // Get the template builder
+  const templateBuilder = JAVA_CLASS_TEMPLATE_BUILDERS[options.template]
+  if (!templateBuilder) {
+    throw new Error(`Unknown template: ${options.template}`)
+  }
+
+  // Generate the class content
+  const content = templateBuilder(fullPackage, options.className)
+
+  // Create the directory and write the file
+  await ensureDir(packageDir)
+  await fs.writeFile(filePath, content, 'utf-8')
+
+  return {
+    success: true,
+    filePath,
+    relativePath,
+  }
+}
+
+async function deleteJavaClass(options: { projectPath: string; relativePath: string }): Promise<{ success: boolean }> {
+  const sourceRoot = path.join(options.projectPath, 'src', 'main', 'java')
+  const filePath = path.join(sourceRoot, options.relativePath)
+
+  // Security check: ensure the path is within the source root
+  if (!isWithinPath(filePath, sourceRoot)) {
+    throw new Error('Invalid file path')
+  }
+
+  if (!(await pathExists(filePath))) {
+    throw new Error('File not found')
+  }
+
+  await fs.unlink(filePath)
+  return { success: true }
+}
+
+// ============================================================================
+// END JAVA CLASS MANAGEMENT
+// ============================================================================
+
 async function getBackups(): Promise<BackupInfo[]> {
   const backupsRoot = getBackupsRoot()
   if (!(await pathExists(backupsRoot))) {
@@ -3561,4 +3826,11 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:read-file', async (_event, filePath: string) => readFile(filePath))
   ipcMain.handle('hymn:save-file', async (_event, filePath: string, content: string) => saveFile(filePath, content))
   ipcMain.handle('hymn:check-path-exists', async (_event, filePath: string) => pathExists(filePath))
+  // Java source file management for plugins
+  ipcMain.handle('hymn:list-java-sources', async (_event, options: ListJavaSourcesOptions) => listJavaSources(options))
+  ipcMain.handle('hymn:create-java-class', async (_event, options: CreateJavaClassOptions) => createJavaClass(options))
+  ipcMain.handle(
+    'hymn:delete-java-class',
+    async (_event, options: { projectPath: string; relativePath: string }) => deleteJavaClass(options),
+  )
 }
