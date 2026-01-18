@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { ProjectEntry, JavaSourceFile, ServerAsset } from '@/shared/hymn-types'
+import { useState } from 'react'
+import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,7 +12,8 @@ import {
     Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+import { useDirtyFilesStore } from '@/stores'
+import { UnsavedChangesDialog } from '@/components/ui/UnsavedChangesDialog'
 
 // Components
 import { SourceExplorer } from './SourceExplorer'
@@ -23,6 +24,20 @@ import { AssetGrid } from './AssetGrid'
 import { AssetDetails } from './AssetDetails'
 import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
+
+// React Query hooks
+import { useJavaSources, useAssets } from '@/hooks/queries'
+import {
+    useCreateJavaClass,
+    useDeleteJavaFile,
+    useSaveJavaFile,
+    useCreateAsset,
+    useDeleteAsset,
+    useRenameAsset,
+    useInstallProject,
+    useUninstallProject,
+    useBuildProject,
+} from '@/hooks/mutations'
 
 interface PluginWorkspaceProps {
     project: ProjectEntry
@@ -36,11 +51,28 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     // Mode: source code vs assets (for plugins with includesAssetPack)
     const [mode, setMode] = useState<WorkspaceMode>('source')
 
+    // React Query data
+    const { data: sourceData, isLoading: isLoadingSources, refetch: refetchSources } = useJavaSources(project.path)
+    const { data: assets = [], isLoading: isLoadingAssets } = useAssets(
+        project.includesAssetPack ? project.path : null
+    )
+
+    const sources = sourceData?.sources ?? []
+    const basePackage = sourceData?.basePackage ?? ''
+
+    // Mutations
+    const createJavaClass = useCreateJavaClass()
+    const deleteJavaFile = useDeleteJavaFile()
+    const saveJavaFile = useSaveJavaFile()
+    const createAsset = useCreateAsset()
+    const deleteAsset = useDeleteAsset()
+    const renameAsset = useRenameAsset()
+    const installProject = useInstallProject()
+    const uninstallProject = useUninstallProject()
+    const buildProject = useBuildProject()
+
     // Source code state
-    const [sources, setSources] = useState<JavaSourceFile[]>([])
-    const [basePackage, setBasePackage] = useState('')
     const [selectedFile, setSelectedFile] = useState<JavaSourceFile | null>(null)
-    const [isLoadingSources, setIsLoadingSources] = useState(true)
 
     // Java class creation modals
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false)
@@ -48,56 +80,26 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const [pendingTemplate, setPendingTemplate] = useState<JavaTemplate | null>(null)
 
     // Assets state (for includesAssetPack)
-    const [assets, setAssets] = useState<ServerAsset[]>([])
     const [selectedAsset, setSelectedAsset] = useState<ServerAsset | null>(null)
-    const [isLoadingAssets, setIsLoadingAssets] = useState(false)
 
     // Asset creation modals
     const [isAssetTemplateGalleryOpen, setIsAssetTemplateGalleryOpen] = useState(false)
     const [isAssetNameDialogOpen, setIsAssetNameDialogOpen] = useState(false)
-    const [pendingAssetTemplate, setPendingAssetTemplate] = useState<any>(null)
+    const [pendingAssetTemplate, setPendingAssetTemplate] = useState<{ id: ServerAssetTemplate; label: string; category: string } | null>(null)
     const [assetToRename, setAssetToRename] = useState<ServerAsset | null>(null)
 
-    // Building state
-    const [isBuilding, setIsBuilding] = useState(false)
-
-    // Install state
+    // Install state (local for optimistic updates)
     const [isInstalled, setIsInstalled] = useState(project.isInstalled)
-    const [isInstalling, setIsInstalling] = useState(false)
 
-    const loadSources = useCallback(async () => {
-        setIsLoadingSources(true)
-        try {
-            const result = await window.hymn.listJavaSources({ projectPath: project.path })
-            setSources(result.sources)
-            setBasePackage(result.basePackage)
-        } catch (error) {
-            console.error('Failed to load sources:', error)
-            toast.error('Failed to load source files')
-        } finally {
-            setIsLoadingSources(false)
-        }
-    }, [project.path])
+    // Dirty files tracking
+    const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
+    const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
+    const getDirtyFilePaths = useDirtyFilesStore((s) => s.getDirtyFilePaths)
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+    const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
-    const loadAssets = useCallback(async () => {
-        setIsLoadingAssets(true)
-        try {
-            const result = await window.hymn.listServerAssets({ path: project.path })
-            setAssets(result.assets)
-        } catch (error) {
-            console.error('Failed to load assets:', error)
-            toast.error('Failed to load assets')
-        } finally {
-            setIsLoadingAssets(false)
-        }
-    }, [project.path])
-
-    useEffect(() => {
-        loadSources()
-        if (project.includesAssetPack) {
-            loadAssets()
-        }
-    }, [loadSources, loadAssets, project.includesAssetPack])
+    const isInstalling = installProject.isPending || uninstallProject.isPending
+    const isBuilding = buildProject.isPending
 
     // Java class creation handlers
     const handleTemplateSelect = (template: JavaTemplate) => {
@@ -109,57 +111,45 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const handleCreateClass = async (className: string, packagePath: string) => {
         if (!pendingTemplate) return
 
-        try {
-            const result = await window.hymn.createJavaClass({
-                projectPath: project.path,
-                packagePath,
-                className,
-                template: pendingTemplate.id
-            })
+        const result = await createJavaClass.mutateAsync({
+            projectPath: project.path,
+            packagePath,
+            className,
+            template: pendingTemplate.id
+        })
 
-            if (result.success) {
-                toast.success(`${className}.java created!`)
-                await loadSources()
-                // Find and select the new file
-                const newFile = sources.find(s => s.relativePath === result.relativePath)
-                    || { ...result, id: result.relativePath, name: `${className}.java`, className, packageName: packagePath ? `${basePackage}.${packagePath}` : basePackage, absolutePath: result.filePath }
-                setSelectedFile(newFile as JavaSourceFile)
-            }
-        } catch (err) {
-            console.error('Failed to create class:', err)
-            toast.error('Failed to create class')
-        } finally {
-            setPendingTemplate(null)
+        if (result.result.success) {
+            // Find and select the new file
+            const newFile = sources.find(s => s.relativePath === result.result.relativePath)
+                || { ...result.result, id: result.result.relativePath, name: `${className}.java`, className, packageName: packagePath ? `${basePackage}.${packagePath}` : basePackage, absolutePath: result.result.filePath }
+            setSelectedFile(newFile as JavaSourceFile)
         }
+        setPendingTemplate(null)
     }
 
     const handleDeleteFile = async (file: JavaSourceFile) => {
         if (!confirm(`Are you sure you want to delete ${file.name}?`)) return
 
-        try {
-            await window.hymn.deleteJavaClass({
-                projectPath: project.path,
-                relativePath: file.relativePath
-            })
-            toast.success('File deleted')
-            if (selectedFile?.id === file.id) {
-                setSelectedFile(null)
-            }
-            await loadSources()
-        } catch (error) {
-            console.error('Failed to delete file:', error)
-            toast.error('Failed to delete file')
+        await deleteJavaFile.mutateAsync({
+            projectPath: project.path,
+            file
+        })
+
+        if (selectedFile?.id === file.id) {
+            setSelectedFile(null)
         }
     }
 
     const handleSaveFile = async (content: string) => {
         if (!selectedFile) return
-        await window.hymn.saveFile(selectedFile.absolutePath, content)
-        toast.success('File saved')
+        await saveJavaFile.mutateAsync({
+            filePath: selectedFile.absolutePath,
+            content
+        })
     }
 
     // Asset handlers (for includesAssetPack)
-    const handleAssetTemplateSelect = (template: any) => {
+    const handleAssetTemplateSelect = (template: { id: ServerAssetTemplate; label: string; category: string }) => {
         setIsAssetTemplateGalleryOpen(false)
         setPendingAssetTemplate(template)
         setIsAssetNameDialogOpen(true)
@@ -168,43 +158,29 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
     const handleCreateAsset = async (name: string) => {
         if (!pendingAssetTemplate) return
 
-        try {
-            let subfolder = 'Items'
-            if (pendingAssetTemplate.category === 'Blocks') subfolder = 'Blocks'
-            if (pendingAssetTemplate.category === 'Entities') subfolder = 'Entity'
-            if (pendingAssetTemplate.category === 'Audio') subfolder = 'Audio'
+        let subfolder = 'Items'
+        if (pendingAssetTemplate.category === 'Blocks') subfolder = 'Blocks'
+        if (pendingAssetTemplate.category === 'Entities') subfolder = 'Entity'
+        if (pendingAssetTemplate.category === 'Audio') subfolder = 'Audio'
 
-            const result = await window.hymn.createServerAsset({
-                path: project.path,
-                destination: `Server/${subfolder}`,
-                name: name,
-                template: pendingAssetTemplate.id
-            })
+        const result = await createAsset.mutateAsync({
+            projectPath: project.path,
+            destination: `Server/${subfolder}`,
+            name: name,
+            template: pendingAssetTemplate.id
+        })
 
-            if (result.success) {
-                toast.success(`${pendingAssetTemplate.label} created!`)
-                await loadAssets()
-                setSelectedAsset(result.asset)
-            }
-        } catch (err) {
-            console.error('Failed to create asset:', err)
-            toast.error('Failed to create asset')
-        } finally {
-            setPendingAssetTemplate(null)
+        if (result.result.success) {
+            setSelectedAsset(result.result.asset)
         }
+        setPendingAssetTemplate(null)
     }
 
     const handleDeleteAsset = async (asset: ServerAsset) => {
         if (!confirm(`Are you sure you want to delete ${asset.name}?`)) return
-        try {
-            await window.hymn.deleteServerAsset({ path: project.path, relativePath: asset.relativePath })
-            toast.success('Asset deleted')
-            if (selectedAsset?.id === asset.id) {
-                setSelectedAsset(null)
-            }
-            await loadAssets()
-        } catch (error) {
-            toast.error('Failed to delete asset')
+        await deleteAsset.mutateAsync({ projectPath: project.path, asset })
+        if (selectedAsset?.id === asset.id) {
+            setSelectedAsset(null)
         }
     }
 
@@ -215,75 +191,43 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
 
     const handleConfirmAssetRename = async (newName: string) => {
         if (!assetToRename) return
-        try {
-            if (newName === assetToRename.name.replace(/\.[^/.]+$/, "")) return
+        if (newName === assetToRename.name.replace(/\.[^/.]+$/, "")) return
 
-            const oldPath = assetToRename.relativePath
-            const lastDotIndex = oldPath.lastIndexOf('.')
-            const extension = lastDotIndex !== -1 ? oldPath.substring(lastDotIndex) : ''
-            const directory = oldPath.substring(0, oldPath.lastIndexOf('/'))
-            const newPath = `${directory}/${newName}${extension}`
-
-            await window.hymn.moveServerAsset({
-                path: project.path,
-                source: oldPath,
-                destination: newPath
-            })
-            toast.success('Asset renamed')
-            await loadAssets()
-        } catch (error) {
-            toast.error('Failed to rename asset')
-        }
+        await renameAsset.mutateAsync({
+            projectPath: project.path,
+            asset: assetToRename,
+            newName,
+        })
     }
 
     const handleInstall = async () => {
-        setIsInstalling(true)
-        try {
-            await window.hymn.installProject({
-                projectPath: project.path,
-                projectType: 'plugin',
-            })
-            setIsInstalled(true)
-            toast.success('Plugin installed for testing')
-            onInstallChange?.()
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to install plugin')
-        } finally {
-            setIsInstalling(false)
-        }
+        await installProject.mutateAsync({
+            projectPath: project.path,
+            projectType: 'plugin',
+        })
+        setIsInstalled(true)
+        onInstallChange?.()
     }
 
     const handleUninstall = async () => {
         if (!project.installedPath) return
-        setIsInstalling(true)
-        try {
-            await window.hymn.uninstallProject({
-                projectPath: project.installedPath,
-            })
-            setIsInstalled(false)
-            toast.success('Plugin uninstalled')
-            onInstallChange?.()
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to uninstall plugin')
-        } finally {
-            setIsInstalling(false)
-        }
+        await uninstallProject.mutateAsync({
+            projectPath: project.installedPath,
+        })
+        setIsInstalled(false)
+        onInstallChange?.()
     }
 
     const handleBuild = async () => {
-        setIsBuilding(true)
-        toast.info('Building plugin...')
-        try {
-            const result = await window.hymn.buildMod({ path: project.path })
-            if (result.success) {
-                toast.success('Build complete!')
-            } else {
-                toast.error('Build failed. Check output for errors.')
-            }
-        } catch (err) {
-            toast.error('Build failed')
-        } finally {
-            setIsBuilding(false)
+        await buildProject.mutateAsync({ projectPath: project.path })
+    }
+
+    const attemptNavigation = (navigationFn: () => void) => {
+        if (hasAnyDirtyFiles()) {
+            setPendingNavigation(() => navigationFn)
+            setShowUnsavedDialog(true)
+        } else {
+            navigationFn()
         }
     }
 
@@ -293,7 +237,19 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
         } else if (mode === 'assets' && selectedAsset) {
             setSelectedAsset(null)
         } else {
-            onBack()
+            attemptNavigation(() => {
+                clearAllDirtyFiles()
+                onBack()
+            })
+        }
+    }
+
+    const handleDiscardAndNavigate = () => {
+        clearAllDirtyFiles()
+        setShowUnsavedDialog(false)
+        if (pendingNavigation) {
+            pendingNavigation()
+            setPendingNavigation(null)
         }
     }
 
@@ -417,7 +373,7 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
                                 onFileSelect={setSelectedFile}
                                 onAddClass={() => setIsTemplateGalleryOpen(true)}
                                 onDeleteFile={handleDeleteFile}
-                                onRefresh={loadSources}
+                                onRefresh={() => refetchSources()}
                                 isLoading={isLoadingSources}
                             />
                         </div>
@@ -500,6 +456,17 @@ export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWork
                 }}
                 templateLabel={assetToRename ? 'Asset' : (pendingAssetTemplate?.label || 'Asset')}
                 initialValue={assetToRename?.name.replace(/\.[^/.]+$/, "") || ''}
+            />
+
+            {/* Unsaved Changes Dialog */}
+            <UnsavedChangesDialog
+                isOpen={showUnsavedDialog}
+                onClose={() => {
+                    setShowUnsavedDialog(false)
+                    setPendingNavigation(null)
+                }}
+                onDiscard={handleDiscardAndNavigate}
+                fileCount={getDirtyFilePaths().length}
             />
         </div>
     )

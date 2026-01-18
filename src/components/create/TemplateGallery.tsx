@@ -21,7 +21,7 @@ interface Template {
     id: ServerAssetTemplate
     label: string
     description: string
-    icon: any
+    icon: React.ComponentType<{ className?: string }>
     category: string
 }
 

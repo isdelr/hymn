@@ -1,11 +1,12 @@
 import { FolderOpen, Boxes, Sparkles, Shield, ArrowRight, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useAppContext } from '@/context/AppContext'
 import { cn } from '@/lib/utils'
 
+// React Query hooks
+import { useSelectInstallPath } from '@/hooks/mutations'
+
 export function WelcomeScreen() {
-  const { actions, state } = useAppContext()
-  const { isScanning } = state
+  const selectInstallPath = useSelectInstallPath()
 
   const features = [
     {
@@ -104,12 +105,12 @@ export function WelcomeScreen() {
 
           <Button
             size="lg"
-            onClick={actions.handleSelectInstallPath}
-            disabled={isScanning}
+            onClick={() => selectInstallPath.mutate()}
+            disabled={selectInstallPath.isPending}
             className="group w-full gap-2 h-12 text-base"
           >
             <FolderOpen className="h-5 w-5" />
-            {isScanning ? 'Scanning...' : 'Choose Hytale Folder'}
+            {selectInstallPath.isPending ? 'Scanning...' : 'Choose Hytale Folder'}
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
           </Button>
 

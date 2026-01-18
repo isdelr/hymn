@@ -18,21 +18,35 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { Separator } from '@/components/ui/separator'
 import Editor, { OnMount } from "@monaco-editor/react"
+import type { editor } from 'monaco-editor'
 import { cn } from '@/lib/utils'
+import { useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { useDirtyFilesStore } from '@/stores'
 
 interface AssetDetailsProps {
     asset: ServerAsset
     onBack?: () => void
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AssetData = Record<string, any>
+
 export function AssetDetails({ asset }: AssetDetailsProps) {
-    const [data, setData] = useState<any>(null)
+    const [data, setData] = useState<AssetData | null>(null)
+    const [originalData, setOriginalData] = useState<AssetData | null>(null)
     const [mode, setMode] = useState<'visual' | 'code'>('visual')
     const [isLoading, setIsLoading] = useState(true)
     const [modRoot, setModRoot] = useState<string | null>(null)
 
     // Editor State
-    const [editorRef, setEditorRef] = useState<any>(null)
+    const [editorRef, setEditorRef] = useState<editor.IStandaloneCodeEditor | null>(null)
+    const { theme: monacoTheme } = useMonacoTheme()
+    const setDirtyFile = useDirtyFilesStore((s) => s.setDirtyFile)
+    const clearDirtyFile = useDirtyFilesStore((s) => s.clearDirtyFile)
+    const getDirtyContent = useDirtyFilesStore((s) => s.getDirtyContent)
+
+    const isDirty = data !== null && originalData !== null &&
+        JSON.stringify(data) !== JSON.stringify(originalData)
 
     useEffect(() => {
         const loadData = async () => {
@@ -45,8 +59,23 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
                     setModRoot(normAbs.slice(0, -normRel.length))
                 }
 
+                // Check for dirty content first
+                const dirtyContent = getDirtyContent(asset.absolutePath)
+
                 const content = await window.hymn.readFile(asset.absolutePath)
-                setData(JSON.parse(content))
+                const originalParsed = JSON.parse(content)
+                setOriginalData(originalParsed)
+
+                // Use dirty content if available
+                if (dirtyContent !== undefined) {
+                    try {
+                        setData(JSON.parse(dirtyContent))
+                    } catch {
+                        setData(originalParsed)
+                    }
+                } else {
+                    setData(originalParsed)
+                }
             } catch (error) {
                 console.error('Failed to load asset data:', error)
             } finally {
@@ -54,31 +83,43 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
             }
         }
         loadData()
-    }, [asset.absolutePath])
+    }, [asset.absolutePath, asset.relativePath, getDirtyContent])
+
+    // Update dirty files context when data changes
+    useEffect(() => {
+        if (data && originalData) {
+            const currentContent = JSON.stringify(data, null, 2)
+            const originalContent = JSON.stringify(originalData, null, 2)
+            setDirtyFile(asset.absolutePath, currentContent, originalContent)
+        }
+    }, [data, originalData, asset.absolutePath, setDirtyFile])
 
     const handleSave = async () => {
         try {
             await window.hymn.saveFile(asset.absolutePath, JSON.stringify(data, null, 2))
+            setOriginalData(data)
+            clearDirtyFile(asset.absolutePath)
             toast.success(`${asset.kind} saved successfully`)
         } catch (err) {
             toast.error('Failed to save asset')
         }
     }
 
-    const updateField = (path: string, value: any) => {
+    const updateField = (path: string, value: unknown) => {
+        if (!data) return
         const keys = path.split('.')
-        const newData = { ...data }
-        let current = newData
+        const newData = { ...data } as AssetData
+        let current = newData as AssetData
         for (let i = 0; i < keys.length - 1; i++) {
             if (!current[keys[i]]) current[keys[i]] = {}
-            current = current[keys[i]]
+            current = current[keys[i]] as AssetData
         }
         current[keys[keys.length - 1]] = value
         setData(newData)
     }
 
-    const handleEditorDidMount: OnMount = (editor, monaco) => {
-        setEditorRef(editor)
+    const handleEditorDidMount: OnMount = (editorInstance, monaco) => {
+        setEditorRef(editorInstance)
         monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
             validate: true,
             schemas: []
@@ -87,7 +128,7 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
 
     const handleFormat = () => {
         if (editorRef) {
-            editorRef.getAction('editor.action.formatDocument').run()
+            editorRef.getAction('editor.action.formatDocument')?.run()
             toast.success('Document formatted')
         }
     }
@@ -113,6 +154,9 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
                         <div className="flex items-center gap-2">
                             <h2 className="text-2xl font-bold tracking-tight">{asset.displayName || asset.name}</h2>
                             <Badge variant="outline" className="text-[10px] uppercase">{asset.kind}</Badge>
+                            {isDirty && (
+                                <span className="w-2 h-2 rounded-full bg-amber-500" title="Unsaved changes" />
+                            )}
                         </div>
                         <p className="text-xs text-muted-foreground font-mono opacity-50">{asset.relativePath}</p>
                     </div>
@@ -130,7 +174,27 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
                         {mode === 'visual' ? 'View Source' : 'View Components'}
                     </Button>
                     <Separator orientation="vertical" className="h-6 mx-2" />
-                    <Button onClick={handleSave} className="h-10 gap-2 px-6 font-bold glow-primary">
+                    {isDirty && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                setData(originalData)
+                                clearDirtyFile(asset.absolutePath)
+                            }}
+                            className="text-muted-foreground"
+                        >
+                            Discard
+                        </Button>
+                    )}
+                    <Button
+                        onClick={handleSave}
+                        disabled={!isDirty}
+                        className={cn(
+                            "h-10 gap-2 px-6 font-bold",
+                            isDirty && "glow-primary"
+                        )}
+                    >
                         <Save className="h-4 w-4" />
                         Save Changes
                     </Button>
@@ -146,7 +210,7 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
                         value={JSON.stringify(data, null, 2)}
                         onChange={handleEditorChange}
                         onMount={handleEditorDidMount}
-                        theme="vs-dark"
+                        theme={monacoTheme}
                         options={{
                             minimap: { enabled: false },
                             fontSize: 13,
@@ -195,7 +259,7 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
 
 // --- Sub-Editors ---
 
-function ItemEditor({ data, updateField, modRoot }: { data: any, updateField: (p: string, v: any) => void, modRoot: string | null }) {
+function ItemEditor({ data, updateField, modRoot }: { data: AssetData | null, updateField: (p: string, v: unknown) => void, modRoot: string | null }) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ComponentCard title="Visuals" icon={Layers} description="Item appearance">
@@ -256,7 +320,7 @@ function ItemEditor({ data, updateField, modRoot }: { data: any, updateField: (p
     )
 }
 
-function BlockEditor({ data, updateField }: { data: any, updateField: (p: string, v: any) => void }) {
+function BlockEditor({ data, updateField }: { data: AssetData | null, updateField: (p: string, v: unknown) => void }) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ComponentCard title="Block Identity" icon={Layers} description="Type definition">
@@ -309,7 +373,7 @@ function BlockEditor({ data, updateField }: { data: any, updateField: (p: string
     )
 }
 
-function EntityEditor({ data, updateField, modRoot }: { data: any, updateField: (p: string, v: any) => void, modRoot: string | null }) {
+function EntityEditor({ data, updateField, modRoot }: { data: AssetData | null, updateField: (p: string, v: unknown) => void, modRoot: string | null }) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ComponentCard title="Character" icon={Layers} description="Appearance">
@@ -477,7 +541,14 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     return <input className="w-full bg-muted/30 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:bg-background transition-colors" {...props} />
 }
 
-function ComponentCard({ title, icon: Icon, description, children }: any) {
+interface ComponentCardProps {
+    title: string
+    icon: React.ComponentType<{ className?: string }>
+    description: string
+    children: React.ReactNode
+}
+
+function ComponentCard({ title, icon: Icon, description, children }: ComponentCardProps) {
     return (
         <div className="bg-card/40 rounded-2xl overflow-hidden">
             <div className="p-4 bg-muted/20 border-b flex items-center justify-between">

@@ -1,105 +1,66 @@
-import { useEffect, useState } from 'react'
 import {
-  AlertTriangle,
-  Archive,
-  Check,
-  Clock,
+  CheckCircle,
   ExternalLink,
   FolderOpen,
   HardDrive,
-  RefreshCw,
-  Trash2,
-  CheckCircle,
+  Monitor,
+  Moon,
+  Palette,
+  Settings2,
+  SortAsc,
+  Sun,
   XCircle,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { useAppContext } from '@/context/AppContext'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { BackupInfo } from '@/shared/hymn-types'
+import type { ThemeMode, ModSortOrder } from '@/shared/hymn-types'
+
+// React Query hooks
+import { useInstallInfo, useTheme, useModSortOrder, useDefaultExportPath } from '@/hooks/queries'
+import {
+  useSelectInstallPath,
+  useSetTheme,
+  useSetModSortOrder,
+  useSetDefaultExportPath,
+  useSelectDefaultExportPath,
+} from '@/hooks/mutations'
 
 export function SettingsSection() {
-  const { state, actions } = useAppContext()
-  const { installInfo, isScanning } = state
+  // React Query data
+  const { data: installInfo } = useInstallInfo()
+  const { data: theme = 'system' } = useTheme()
+  const { data: modSortOrder = 'name' } = useModSortOrder()
+  const { data: defaultExportPath = null } = useDefaultExportPath()
 
-  const [backups, setBackups] = useState<BackupInfo[]>([])
-  const [isLoadingBackups, setIsLoadingBackups] = useState(false)
-  const [backupError, setBackupError] = useState<string | null>(null)
-  const [backupMessage, setBackupMessage] = useState<string | null>(null)
-  const [isRestoring, setIsRestoring] = useState(false)
-  const [deleteBackupId, setDeleteBackupId] = useState<string | null>(null)
-  const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null)
+  // Mutations
+  const selectInstallPath = useSelectInstallPath()
+  const setTheme = useSetTheme()
+  const setModSortOrder = useSetModSortOrder()
+  const setDefaultExportPath = useSetDefaultExportPath()
+  const selectDefaultExportPath = useSelectDefaultExportPath()
 
-  const loadBackups = async () => {
-    setIsLoadingBackups(true)
-    setBackupError(null)
-    try {
-      const list = await window.hymn.getBackups()
-      setBackups(list)
-    } catch {
-      setBackupError('Failed to load backups.')
-    } finally {
-      setIsLoadingBackups(false)
-    }
+  const handleThemeChange = (value: ThemeMode) => {
+    setTheme.mutate(value)
   }
 
-  useEffect(() => {
-    void loadBackups()
-  }, [])
-
-  const handleRestoreBackup = async () => {
-    if (!restoreBackupId) return
-    setIsRestoring(true)
-    setBackupMessage(null)
-    setBackupError(null)
-    try {
-      await window.hymn.restoreBackup(restoreBackupId)
-      setBackupMessage(`Restored backup successfully.`)
-      await actions.runScan()
-    } catch (error) {
-      setBackupError(error instanceof Error ? error.message : 'Failed to restore backup.')
-    } finally {
-      setIsRestoring(false)
-      setRestoreBackupId(null)
-    }
+  const handleSortOrderChange = (value: ModSortOrder) => {
+    setModSortOrder.mutate(value)
   }
 
-  const handleDeleteBackup = async () => {
-    if (!deleteBackupId) return
-    setBackupError(null)
-    try {
-      await window.hymn.deleteBackup(deleteBackupId)
-      setBackups((prev) => prev.filter((b) => b.id !== deleteBackupId))
-      setBackupMessage(`Backup deleted.`)
-    } catch (error) {
-      setBackupError(error instanceof Error ? error.message : 'Failed to delete backup.')
-    } finally {
-      setDeleteBackupId(null)
-    }
+  const handleSelectExportPath = () => {
+    selectDefaultExportPath.mutate()
   }
 
-  const formatDate = (isoString: string) => {
-    try {
-      const date = new Date(isoString)
-      return date.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    } catch {
-      return isoString
-    }
+  const handleClearExportPath = () => {
+    setDefaultExportPath.mutate(null)
   }
 
   return (
@@ -153,8 +114,8 @@ export function SettingsSection() {
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={actions.handleSelectInstallPath}
-                disabled={isScanning}
+                onClick={() => selectInstallPath.mutate()}
+                disabled={selectInstallPath.isPending}
                 className="flex-1 h-10"
               >
                 <FolderOpen className="mr-2 h-4 w-4" />
@@ -199,165 +160,148 @@ export function SettingsSection() {
           </CardContent>
         </Card>
 
-      {/* Backups Card */}
+      {/* Appearance Card */}
       <Card className="overflow-hidden rounded-xl border-border/40 bg-card/80">
         <CardHeader className="border-b border-border/30 bg-muted/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
-                <Clock className="h-5 w-5 text-amber-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Backups</CardTitle>
-                <CardDescription>
-                  {backups.length} backup{backups.length !== 1 ? 's' : ''} available
-                </CardDescription>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10">
+              <Palette className="h-5 w-5 text-violet-400" />
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={loadBackups}
-              disabled={isLoadingBackups}
-              className="h-8"
-            >
-              <RefreshCw className={cn('h-4 w-4', isLoadingBackups && 'animate-spin')} />
-            </Button>
+            <div>
+              <CardTitle className="text-base">Appearance</CardTitle>
+              <CardDescription>Customize the look and feel</CardDescription>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-5 space-y-4">
-          {/* Status messages */}
-          {backupError && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <AlertTriangle className="h-3 w-3" />
-              {backupError}
-            </div>
-          )}
-          {backupMessage && (
-            <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
-              <Check className="h-3 w-3" />
-              {backupMessage}
-            </div>
-          )}
-
-          {backups.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/50 py-10">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-muted/50">
-                <Archive className="h-6 w-6 text-muted-foreground/50" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/50">
+                {theme === 'light' ? (
+                  <Sun className="h-4 w-4 text-amber-500" />
+                ) : theme === 'dark' ? (
+                  <Moon className="h-4 w-4 text-blue-400" />
+                ) : (
+                  <Monitor className="h-4 w-4 text-muted-foreground" />
+                )}
               </div>
-              <p className="text-sm font-medium">No backups yet</p>
-              <p className="text-xs text-muted-foreground">
-                Backups are created automatically when applying profiles.
-              </p>
+              <div>
+                <p className="text-sm font-medium">Theme</p>
+                <p className="text-xs text-muted-foreground">Select your preferred color scheme</p>
+              </div>
             </div>
-          ) : (
-            <ScrollArea className="max-h-64">
-              <div className="space-y-2">
-                {backups.map((backup) => (
-                  <div
-                    key={backup.id}
-                    className="flex items-center justify-between rounded-xl border border-border/50 bg-card p-4 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{backup.profileId}</p>
-                        <Badge variant="outline" className="text-[10px]">
-                          {backup.modCount} mod{backup.modCount !== 1 ? 's' : ''}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatDate(backup.createdAt)}
-                      </p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setRestoreBackupId(backup.id)}
-                        disabled={isRestoring || isScanning}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Archive className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setDeleteBackupId(backup.id)}
-                        disabled={isRestoring || isScanning}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+            <Select value={theme} onValueChange={(v) => handleThemeChange(v as ThemeMode)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">
+                  <div className="flex items-center gap-2">
+                    <Sun className="h-4 w-4" />
+                    Light
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
-          )}
+                </SelectItem>
+                <SelectItem value="dark">
+                  <div className="flex items-center gap-2">
+                    <Moon className="h-4 w-4" />
+                    Dark
+                  </div>
+                </SelectItem>
+                <SelectItem value="system">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4" />
+                    System
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Restore Dialog */}
-      <Dialog open={!!restoreBackupId} onOpenChange={() => setRestoreBackupId(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+      {/* Preferences Card */}
+      <Card className="overflow-hidden rounded-xl border-border/40 bg-card/80">
+        <CardHeader className="border-b border-border/30 bg-muted/20">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
+              <Settings2 className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Preferences</CardTitle>
+              <CardDescription>Configure application behavior</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 space-y-6">
+          {/* Mod Sort Order */}
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10">
-                <Archive className="h-5 w-5 text-warning" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/50">
+                <SortAsc className="h-4 w-4 text-muted-foreground" />
               </div>
               <div>
-                <DialogTitle>Restore Backup</DialogTitle>
-                <DialogDescription>Revert to a previous state</DialogDescription>
+                <p className="text-sm font-medium">Sort mods by</p>
+                <p className="text-xs text-muted-foreground">Default sorting for mod lists</p>
               </div>
             </div>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              This will restore your mod folders to the state from this backup. Your current configuration will be replaced.
-            </p>
+            <Select value={modSortOrder} onValueChange={(v) => handleSortOrderChange(v as ModSortOrder)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Name</SelectItem>
+                <SelectItem value="type">Type</SelectItem>
+                <SelectItem value="size">Size</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setRestoreBackupId(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleRestoreBackup} disabled={isRestoring} className="gap-2">
-              <Archive className="h-4 w-4" />
-              {isRestoring ? 'Restoring...' : 'Restore'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Delete Dialog */}
-      <Dialog open={!!deleteBackupId} onOpenChange={() => setDeleteBackupId(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+          {/* Default Export Path */}
+          <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
-                <Trash2 className="h-5 w-5 text-destructive" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/50">
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
               </div>
               <div>
-                <DialogTitle>Delete Backup</DialogTitle>
-                <DialogDescription>This action cannot be undone</DialogDescription>
+                <p className="text-sm font-medium">Default export folder</p>
+                <p className="text-xs text-muted-foreground">Where to save exported modpacks</p>
               </div>
             </div>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              Are you sure you want to permanently delete this backup?
-            </p>
+            {defaultExportPath ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-lg bg-muted/50 p-3">
+                  <p className="font-mono text-xs text-muted-foreground break-all">
+                    {defaultExportPath}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSelectExportPath}
+                >
+                  Change
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearExportPath}
+                >
+                  Clear
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={handleSelectExportPath}
+                className="w-full"
+              >
+                <FolderOpen className="mr-2 h-4 w-4" />
+                Select Folder
+              </Button>
+            )}
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setDeleteBackupId(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteBackup} className="gap-2">
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { PackManifest } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,7 @@ export function ManifestEditor({ filePath, onSave }: ManifestEditorProps) {
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
 
-    const loadManifest = async () => {
+    const loadManifest = useCallback(async () => {
         setIsLoading(true)
         try {
             const content = await window.hymn.readFile(filePath)
@@ -26,11 +26,11 @@ export function ManifestEditor({ filePath, onSave }: ManifestEditorProps) {
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [filePath])
 
     useEffect(() => {
         loadManifest()
-    }, [filePath])
+    }, [loadManifest])
 
     const handleUpdate = (updates: Partial<PackManifest>) => {
         if (!manifest) return

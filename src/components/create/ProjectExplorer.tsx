@@ -21,7 +21,7 @@ interface ProjectExplorerProps {
     onFileSelect: (path: string) => void
 }
 
-const ASSET_CATEGORIES: { id: ServerAssetKind | 'all', label: string, icon: any }[] = [
+const ASSET_CATEGORIES: { id: ServerAssetKind | 'all', label: string, icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'all', label: 'Overview', icon: LayoutGrid },
     { id: 'item', label: 'Items', icon: Package },
     { id: 'block', label: 'Blocks', icon: Box },

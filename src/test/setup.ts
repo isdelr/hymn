@@ -1,10 +1,42 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+import { QueryClient } from '@tanstack/react-query'
 
 afterEach(() => {
   cleanup()
 })
+
+// Mock Electron preload APIs
+if (!window.hymnTheme) {
+  window.hymnTheme = {
+    get: vi.fn().mockResolvedValue(false),
+    set: vi.fn().mockResolvedValue(undefined),
+    onChange: vi.fn().mockReturnValue(() => {}),
+  }
+}
+
+if (!window.hymnSettings) {
+  window.hymnSettings = {
+    getTheme: vi.fn().mockResolvedValue('system'),
+    setTheme: vi.fn().mockResolvedValue(undefined),
+    getModSortOrder: vi.fn().mockResolvedValue('name'),
+    setModSortOrder: vi.fn().mockResolvedValue(undefined),
+    getDefaultExportPath: vi.fn().mockResolvedValue(null),
+    setDefaultExportPath: vi.fn().mockResolvedValue(undefined),
+    selectDefaultExportPath: vi.fn().mockResolvedValue(null),
+  }
+}
+
+if (!window.hymnWindow) {
+  window.hymnWindow = {
+    minimize: vi.fn().mockResolvedValue(undefined),
+    maximize: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    isMaximized: vi.fn().mockResolvedValue(false),
+    onMaximizedChange: vi.fn().mockReturnValue(() => {}),
+  }
+}
 
 if (!window.matchMedia) {
   const listeners = new Set<EventListenerOrEventListenerObject>()
@@ -19,12 +51,12 @@ if (!window.matchMedia) {
       removeEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
         listeners.delete(listener)
       },
-      addListener: (listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null) => {
+      addListener: (listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null) => {
         if (listener) {
           listeners.add(listener as EventListenerOrEventListenerObject)
         }
       },
-      removeListener: (listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null) => {
+      removeListener: (listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null) => {
         if (listener) {
           listeners.delete(listener as EventListenerOrEventListenerObject)
         }
@@ -49,4 +81,20 @@ if (!window.ResizeObserver) {
     unobserve = vi.fn()
     disconnect = vi.fn()
   }
+}
+
+// React Query test utilities
+export function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+        staleTime: 0,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  })
 }

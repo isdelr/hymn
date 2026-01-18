@@ -1,5 +1,5 @@
 import { FileJson, Folder, FolderOpen, MoreVertical, Plus, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { FileNode } from '@/shared/hymn-types'
@@ -13,7 +13,7 @@ export function FileExplorer({ rootPath, onFileSelect }: FileExplorerProps) {
     const [rootNode, setRootNode] = useState<FileNode | null>(null)
     const [isLoading, setIsLoading] = useState(true)
 
-    const loadFiles = async () => {
+    const loadFiles = useCallback(async () => {
         setIsLoading(true)
         try {
             const result = await window.hymn.listProjectFiles({ path: rootPath, recursive: true })
@@ -23,11 +23,11 @@ export function FileExplorer({ rootPath, onFileSelect }: FileExplorerProps) {
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [rootPath])
 
     useEffect(() => {
         loadFiles()
-    }, [rootPath])
+    }, [loadFiles])
 
     if (isLoading) {
         return (

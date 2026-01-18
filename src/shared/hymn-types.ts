@@ -72,7 +72,7 @@ export interface ServerAsset {
   absolutePath: string
   kind: ServerAssetKind
   size: number | null
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface ServerAssetListOptions {
@@ -236,23 +236,9 @@ export interface ProfilesState {
   profiles: Profile[]
 }
 
-export interface BackupSnapshot {
-  id: string
-  createdAt: string
-  profileId: string
-  location: string
-  mods: string[]
-}
-
 export interface ApplyResult {
   profileId: string
-  snapshotId: string
   appliedAt: string
-}
-
-export interface RollbackResult {
-  snapshotId: string
-  restoredAt: string
 }
 
 export interface InstallInfo {
@@ -339,13 +325,6 @@ export interface ListProjectFilesOptions {
 
 export interface ListProjectFilesResult {
   root: FileNode
-}
-
-export interface BackupInfo {
-  id: string
-  createdAt: string
-  profileId: string
-  modCount: number
 }
 
 export interface ExportModpackOptions {
@@ -484,7 +463,6 @@ export interface HymnApi {
   updateProfile: (profile: Profile) => Promise<Profile>
   setActiveProfile: (profileId: string) => Promise<ProfilesState>
   applyProfile: (profileId: string) => Promise<ApplyResult>
-  rollbackLastApply: () => Promise<RollbackResult>
   // World management methods
   getWorlds: () => Promise<WorldsState>
   getWorldConfig: (worldId: string) => Promise<WorldConfig | null>
@@ -507,9 +485,6 @@ export interface HymnApi {
   deleteServerAsset: (options: DeleteServerAssetOptions) => Promise<DeleteServerAssetResult>
   listVanillaAssets: (options: VanillaAssetListOptions) => Promise<VanillaAssetListResult>
   importVanillaAsset: (options: ImportVanillaAssetOptions) => Promise<ImportVanillaAssetResult>
-  getBackups: () => Promise<BackupInfo[]>
-  restoreBackup: (backupId: string) => Promise<RollbackResult>
-  deleteBackup: (backupId: string) => Promise<{ success: boolean }>
   exportModpack: (options: ExportModpackOptions) => Promise<ExportModpackResult>
   importModpack: () => Promise<ImportModpackResult>
   // World-based mod export/import
@@ -541,10 +516,33 @@ export interface HymnWindowApi {
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
 }
 
+// Theme types
+export type ThemeMode = 'light' | 'dark' | 'system'
+
+export type ModSortOrder = 'name' | 'type' | 'size'
+
+export interface HymnThemeApi {
+  get: () => Promise<boolean> // returns shouldUseDarkColors
+  set: (theme: ThemeMode) => Promise<void>
+  onChange: (callback: (isDark: boolean) => void) => () => void
+}
+
+export interface HymnSettingsApi {
+  getTheme: () => Promise<ThemeMode>
+  setTheme: (theme: ThemeMode) => Promise<void>
+  getModSortOrder: () => Promise<ModSortOrder>
+  setModSortOrder: (order: ModSortOrder) => Promise<void>
+  getDefaultExportPath: () => Promise<string | null>
+  setDefaultExportPath: (path: string | null) => Promise<void>
+  selectDefaultExportPath: () => Promise<string | null>
+}
+
 // Global window augmentation
 declare global {
   interface Window {
     hymn: HymnApi
     hymnWindow: HymnWindowApi
+    hymnTheme: HymnThemeApi
+    hymnSettings: HymnSettingsApi
   }
 }

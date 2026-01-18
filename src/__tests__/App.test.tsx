@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
-import App from '@/App'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { routeTree } from '@/routeTree.gen'
 import type {
   HymnApi,
   InstallInfo,
@@ -125,12 +127,7 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     setActiveProfile: vi.fn().mockResolvedValue(fixtures.profilesState),
     applyProfile: vi.fn().mockResolvedValue({
       profileId: fixtures.profilesState.activeProfileId ?? 'profile-1',
-      snapshotId: 'snap-1',
       appliedAt: '2026-01-01T00:00:00Z',
-    }),
-    rollbackLastApply: vi.fn().mockResolvedValue({
-      snapshotId: 'snap-2',
-      restoredAt: '2026-01-01T00:00:00Z',
     }),
     createPack: vi.fn().mockResolvedValue({
       success: true,
@@ -215,12 +212,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
         size: 42,
       },
     }),
-    getBackups: vi.fn().mockResolvedValue([]),
-    restoreBackup: vi.fn().mockResolvedValue({
-      snapshotId: 'backup-1',
-      restoredAt: '2026-01-01T00:00:00Z',
-    }),
-    deleteBackup: vi.fn().mockResolvedValue({ success: true }),
     exportModpack: vi.fn().mockResolvedValue({
       success: true,
       outputPath: 'C:\\Downloads\\modpack.hymnpack',
@@ -231,7 +222,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       profileId: 'imported-profile',
       modCount: 2,
     }),
-    // World-based mod export/import
     exportWorldMods: vi.fn().mockResolvedValue({
       success: true,
       outputPath: 'C:\\Downloads\\world_mods.hymnmods',
@@ -242,7 +232,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       modsImported: 2,
       modsSkipped: 1,
     }),
-    // Projects folder management
     listProjects: vi.fn().mockResolvedValue({
       projects: [],
     }),
@@ -253,13 +242,11 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     uninstallProject: vi.fn().mockResolvedValue({
       success: true,
     }),
-    // Package mod (zip creation)
     packageMod: vi.fn().mockResolvedValue({
       success: true,
       outputPath: 'C:\\Downloads\\TestPack.zip',
     }),
     openInExplorer: vi.fn().mockResolvedValue(undefined),
-    // World management methods
     getWorlds: vi.fn().mockResolvedValue({
       worlds: [
         {
@@ -281,7 +268,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       success: true,
     }),
     setSelectedWorld: vi.fn().mockResolvedValue(undefined),
-    // Mod management methods
     deleteMod: vi.fn().mockResolvedValue({
       success: true,
       backupPath: 'C:\\Users\\test\\AppData\\hymn\\deleted-mods\\TestMod_2026-01-01',
@@ -290,7 +276,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       success: true,
       addedPaths: ['C:\\Hytale\\UserData\\Mods\\TestMod.zip'],
     }),
-    // File operation methods
     listProjectFiles: vi.fn().mockResolvedValue({
       root: {
         name: 'TestPack',
@@ -303,7 +288,6 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     readFile: vi.fn().mockResolvedValue(''),
     saveFile: vi.fn().mockResolvedValue({ success: true }),
     checkPathExists: vi.fn().mockResolvedValue(true),
-    // Java source file management for plugins
     listJavaSources: vi.fn().mockResolvedValue({
       sources: [],
       basePackage: 'com.example',
@@ -322,11 +306,46 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
   return merged
 }
 
-const renderApp = async () => {
-  render(<App />)
-  // Wait for mods grid to appear
-  await screen.findByText('Alpha Pack')
+const createTestQueryClient = () => {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+        staleTime: 0,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  })
 }
+
+const createTestRouter = () => {
+  return createRouter({
+    routeTree,
+    defaultPreload: false,
+  })
+}
+
+const renderApp = async (queryClient?: QueryClient) => {
+  const client = queryClient ?? createTestQueryClient()
+  const router = createTestRouter()
+
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+
+  // Wait for mods grid to appear (React Query auto-fetches)
+  await screen.findByText('Alpha Pack', {}, { timeout: 5000 })
+}
+
+// Reset before each test
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('App', () => {
   it('loads install info and scan data', async () => {
@@ -335,8 +354,10 @@ describe('App', () => {
 
     await renderApp()
 
-    expect(api.getInstallInfo).toHaveBeenCalledTimes(1)
-    expect(api.scanMods).toHaveBeenCalledTimes(1)
+    // React Query auto-fetches, so these should have been called
+    await waitFor(() => {
+      expect(api.getInstallInfo).toHaveBeenCalled()
+    })
 
     // Check mod cards are rendered
     expect(screen.getByText('Alpha Pack')).toBeInTheDocument()
@@ -363,19 +384,11 @@ describe('App', () => {
     expect(screen.queryByText('Alpha Pack')).not.toBeInTheDocument()
   })
 
-  it('updates profile state when toggling a mod', async () => {
+  it('calls setModEnabled when toggling a mod', async () => {
     const fixtures = createFixtures()
-    const activeProfile = {
-      ...fixtures.profilesState.profiles[0],
-      enabledMods: ['alpha-pack'],
-    }
-    fixtures.profilesState = {
-      activeProfileId: activeProfile.id,
-      profiles: [activeProfile],
-    }
-
-    const updateProfile = vi.fn().mockImplementation(async (profile: Profile) => profile)
-    buildHymnApi(fixtures, { updateProfile })
+    const setModEnabled = vi.fn().mockResolvedValue({ success: true })
+    const scanMods = vi.fn().mockResolvedValue(fixtures.scanResult)
+    buildHymnApi(fixtures, { setModEnabled, scanMods })
 
     await renderApp()
 
@@ -383,10 +396,13 @@ describe('App', () => {
     const toggle = screen.getByRole('switch', { name: /toggle alpha pack/i })
     await user.click(toggle)
 
-    expect(updateProfile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        enabledMods: [],
-      }),
-    )
+    await waitFor(() => {
+      expect(setModEnabled).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modId: 'alpha-pack',
+          enabled: false,
+        }),
+      )
+    })
   })
 })

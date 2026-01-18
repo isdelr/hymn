@@ -1,13 +1,13 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import {
   Package,
   Plus,
   Code,
   Layers,
   RefreshCw,
+  HelpCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useAppContext } from '@/context/AppContext'
 import type { ProjectEntry } from '@/shared/hymn-types'
 import { ProjectCard } from '@/components/create/ProjectCard'
 import { ModWorkspace } from '@/components/create/ModWorkspace'
@@ -20,109 +20,95 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+
+// React Query hooks
+import { useInstallInfo, useProjects } from '@/hooks/queries'
+import { useCreatePack, useCreatePlugin } from '@/hooks/mutations'
+
+function InfoTooltip({ children }: { children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className="ml-1 text-muted-foreground hover:text-foreground">
+          <HelpCircle className="h-3 w-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[240px] text-xs">
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 type ProjectType = 'pack' | 'plugin'
 
 export function CreateSection() {
-  const { state } = useAppContext()
-  const { installInfo } = state
+  // React Query data
+  const { data: installInfo } = useInstallInfo()
+  const { data: projects = [], isLoading: isLoadingProjects, refetch: loadProjects } = useProjects()
+
+  // Mutations
+  const createPack = useCreatePack()
+  const createPlugin = useCreatePlugin()
 
   const [activeProject, setActiveProject] = useState<ProjectEntry | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [projectType, setProjectType] = useState<ProjectType>('pack')
 
-  // Projects list state
-  const [projects, setProjects] = useState<ProjectEntry[]>([])
-  const [isLoadingProjects, setIsLoadingProjects] = useState(false)
-
   // Common Creation State
-  const [packName, setPackName] = useState('')
-  const [packGroup, setPackGroup] = useState('')
-  const [packVersion, setPackVersion] = useState('1.0.0')
-  const [packDescription, setPackDescription] = useState('')
+  const [projectName, setProjectName] = useState('')
+  const [projectGroup, setProjectGroup] = useState('')
+  const [projectVersion, setProjectVersion] = useState('1.0.0')
+  const [projectDescription, setProjectDescription] = useState('')
   const [authorName, setAuthorName] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
-
-  // Pack-specific state
-  const [packLocation, setPackLocation] = useState<'packs' | 'mods'>('packs')
-  const [includeCommon, setIncludeCommon] = useState(true)
-  const [includeServer, setIncludeServer] = useState(true)
 
   // Plugin-specific state
-  const [includesAssetPack, setIncludesAssetPack] = useState(true)
-  const [patchline, setPatchline] = useState<'release' | 'pre-release'>('release')
+  const [hytaleVersion, setHytaleVersion] = useState<'release' | 'pre-release'>('release')
 
-  const loadProjects = useCallback(async () => {
-    setIsLoadingProjects(true)
-    try {
-      const result = await window.hymn.listProjects()
-      setProjects(result.projects.sort((a, b) => a.name.localeCompare(b.name)))
-    } catch (error) {
-      console.error('Failed to load projects:', error)
-    } finally {
-      setIsLoadingProjects(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadProjects()
-  }, [loadProjects])
+  const isCreating = createPack.isPending || createPlugin.isPending
 
   const handleCreateProject = async () => {
-    if (!packName.trim()) return
-    if (projectType === 'plugin' && !packGroup.trim()) return
+    if (!projectName.trim()) return
+    if (projectType === 'plugin' && !projectGroup.trim()) return
 
-    setIsCreating(true)
-    try {
-      if (projectType === 'pack') {
-        await window.hymn.createPack({
-          name: packName,
-          group: packGroup || undefined,
-          version: packVersion || '1.0.0',
-          description: packDescription || undefined,
-          authorName: authorName || undefined,
-          location: packLocation,
-          includeCommon,
-          includeServer,
-        })
-      } else {
-        await window.hymn.createPlugin({
-          name: packName,
-          group: packGroup,
-          version: packVersion || '0.0.1',
-          description: packDescription || undefined,
-          authorName: authorName || undefined,
-          includesAssetPack,
-          patchline,
-        })
-      }
-
-      await loadProjects()
-      setIsCreateDialogOpen(false)
-      // Reset form state
-      resetForm()
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setIsCreating(false)
+    if (projectType === 'pack') {
+      await createPack.mutateAsync({
+        name: projectName,
+        group: projectGroup || undefined,
+        version: projectVersion || '1.0.0',
+        description: projectDescription || undefined,
+        authorName: authorName || undefined,
+        location: 'packs',
+        includeCommon: true,
+        includeServer: true,
+      })
+    } else {
+      await createPlugin.mutateAsync({
+        name: projectName,
+        group: projectGroup,
+        version: projectVersion || '0.0.1',
+        description: projectDescription || undefined,
+        authorName: authorName || undefined,
+        includesAssetPack: true,
+        patchline: hytaleVersion,
+      })
     }
+
+    setIsCreateDialogOpen(false)
+    resetForm()
   }
 
   const resetForm = () => {
-    setPackName('')
-    setPackGroup('')
-    setPackVersion('1.0.0')
-    setPackDescription('')
+    setProjectName('')
+    setProjectGroup('')
+    setProjectVersion('1.0.0')
+    setProjectDescription('')
     setAuthorName('')
-    setPackLocation('packs')
-    setIncludeCommon(true)
-    setIncludeServer(true)
-    setIncludesAssetPack(true)
-    setPatchline('release')
+    setHytaleVersion('release')
     setProjectType('pack')
   }
 
@@ -134,7 +120,7 @@ export function CreateSection() {
         <Package className="mb-4 h-12 w-12 text-muted-foreground/50" />
         <h2 className="mb-2 text-lg font-medium">No Install Detected</h2>
         <p className="text-sm text-muted-foreground">
-          Configure your Hytale install path in Settings to start creating mods.
+          Configure your Hytale install path in Settings to start creating.
         </p>
       </div>
     )
@@ -148,7 +134,7 @@ export function CreateSection() {
           setActiveProject(null)
           loadProjects()
         }}
-        onInstallChange={loadProjects}
+        onInstallChange={() => loadProjects()}
       />
     )
   }
@@ -156,203 +142,161 @@ export function CreateSection() {
   return (
     <div className="space-y-8">
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogContent className="sm:max-w-[540px] border-border/50 bg-card">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Create New Project</DialogTitle>
-              <DialogDescription>
-                {projectType === 'pack'
-                  ? 'Create an asset pack with textures, models, and server data.'
-                  : 'Create a Java plugin with Gradle build system and server API access.'}
-              </DialogDescription>
-            </DialogHeader>
+        <DialogContent className="sm:max-w-[480px] border-border/50 bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Create New Project</DialogTitle>
+            <DialogDescription>
+              {projectType === 'pack'
+                ? 'Add blocks, items, mobs, and other content using the Asset Editor.'
+                : 'Write Java code using the Hytale server API.'}
+            </DialogDescription>
+          </DialogHeader>
 
-            {/* Project Type Selector */}
-            <div className="grid grid-cols-2 gap-3 py-2">
-              <button
-                type="button"
-                onClick={() => setProjectType('pack')}
-                className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${
-                  projectType === 'pack'
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                }`}
-              >
-                <div className={`p-2 rounded-lg ${projectType === 'pack' ? 'bg-primary/20' : 'bg-muted'}`}>
-                  <Layers className={`h-5 w-5 ${projectType === 'pack' ? 'text-primary' : 'text-muted-foreground'}`} />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm">Asset Pack</div>
-                  <div className="text-xs text-muted-foreground">Textures, models, data</div>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setProjectType('plugin')}
-                className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${
-                  projectType === 'plugin'
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                }`}
-              >
-                <div className={`p-2 rounded-lg ${projectType === 'plugin' ? 'bg-primary/20' : 'bg-muted'}`}>
-                  <Code className={`h-5 w-5 ${projectType === 'plugin' ? 'text-primary' : 'text-muted-foreground'}`} />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm">Java Plugin</div>
-                  <div className="text-xs text-muted-foreground">Code, commands, events</div>
-                </div>
-              </button>
-            </div>
-
-            <Separator />
-
-            <div className="grid gap-4 py-2">
-              {/* Common fields */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Project Name</Label>
-                  <Input
-                    id="name"
-                    placeholder={projectType === 'pack' ? 'MyAssetPack' : 'MyPlugin'}
-                    value={packName}
-                    onChange={(e) => setPackName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="group">
-                    {projectType === 'plugin' ? 'Package Group' : 'Group'}
-                    {projectType === 'plugin' && <span className="text-destructive ml-1">*</span>}
-                  </Label>
-                  <Input
-                    id="group"
-                    placeholder="com.example"
-                    value={packGroup}
-                    onChange={(e) => setPackGroup(e.target.value)}
-                  />
-                  {projectType === 'plugin' && (
-                    <p className="text-[10px] text-muted-foreground">Java package name (e.g., com.yourname)</p>
-                  )}
-                </div>
+          {/* Project Type Selector */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setProjectType('pack')}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                projectType === 'pack'
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:border-border hover:bg-muted/50'
+              }`}
+            >
+              <div className={`p-2 rounded-md ${projectType === 'pack' ? 'bg-primary/20' : 'bg-muted'}`}>
+                <Layers className={`h-4 w-4 ${projectType === 'pack' ? 'text-primary' : 'text-muted-foreground'}`} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="version">Version</Label>
-                  <Input
-                    id="version"
-                    placeholder={projectType === 'pack' ? '1.0.0' : '0.0.1'}
-                    value={packVersion}
-                    onChange={(e) => setPackVersion(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="author">Author</Label>
-                  <Input
-                    id="author"
-                    placeholder="Your Name"
-                    value={authorName}
-                    onChange={(e) => setAuthorName(e.target.value)}
-                  />
-                </div>
+              <div>
+                <div className="font-medium text-sm">Pack</div>
+                <div className="text-[11px] text-muted-foreground">Assets & content</div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder={projectType === 'pack' ? 'What does this pack add?' : 'What does this plugin do?'}
-                  value={packDescription}
-                  onChange={(e) => setPackDescription(e.target.value)}
-                  rows={2}
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectType('plugin')}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                projectType === 'plugin'
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:border-border hover:bg-muted/50'
+              }`}
+            >
+              <div className={`p-2 rounded-md ${projectType === 'plugin' ? 'bg-primary/20' : 'bg-muted'}`}>
+                <Code className={`h-4 w-4 ${projectType === 'plugin' ? 'text-primary' : 'text-muted-foreground'}`} />
+              </div>
+              <div>
+                <div className="font-medium text-sm">Plugin</div>
+                <div className="text-[11px] text-muted-foreground">Java code</div>
+              </div>
+            </button>
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-xs">Name</Label>
+                <Input
+                  id="name"
+                  placeholder={projectType === 'pack' ? 'MyPack' : 'MyPlugin'}
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
                 />
               </div>
-
-              <Separator className="my-1" />
-
-              {/* Pack-specific options */}
-              {projectType === 'pack' && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Location</Label>
-                    <Select value={packLocation} onValueChange={(v) => setPackLocation(v as 'packs' | 'mods')}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="packs">UserData/Packs (Folder-based projects)</SelectItem>
-                        <SelectItem value="mods">UserData/Mods (Standard mod location)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-xs uppercase font-bold text-muted-foreground">Scaffolding</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox id="common" checked={includeCommon} onCheckedChange={(c) => setIncludeCommon(!!c)} />
-                        <label htmlFor="common" className="text-sm font-medium leading-none">
-                          Include Common
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox id="server" checked={includeServer} onCheckedChange={(c) => setIncludeServer(!!c)} />
-                        <label htmlFor="server" className="text-sm font-medium leading-none">
-                          Include Server
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Plugin-specific options */}
-              {projectType === 'plugin' && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Release Channel</Label>
-                    <Select value={patchline} onValueChange={(v) => setPatchline(v as 'release' | 'pre-release')}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="release">Release (Stable)</SelectItem>
-                        <SelectItem value="pre-release">Pre-Release (Beta)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-xs uppercase font-bold text-muted-foreground">Options</Label>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="assetPack"
-                        checked={includesAssetPack}
-                        onCheckedChange={(c) => setIncludesAssetPack(!!c)}
-                      />
-                      <label htmlFor="assetPack" className="text-sm font-medium leading-none">
-                        Include Asset Pack Support
-                      </label>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground pl-6">
-                      Enables in-game asset editor and allows bundling textures/models with your plugin.
-                    </p>
-                  </div>
-                </>
-              )}
+              <div className="space-y-1.5">
+                <div className="flex items-center">
+                  <Label htmlFor="group" className="text-xs">
+                    {projectType === 'plugin' ? 'Package' : 'Group'}
+                    {projectType === 'plugin' && <span className="text-destructive ml-0.5">*</span>}
+                  </Label>
+                  <InfoTooltip>
+                    {projectType === 'plugin'
+                      ? 'A unique identifier for your plugin, written like a reversed website. Example: com.yourname or io.github.yourname'
+                      : 'Optional identifier to organize your packs. Example: com.yourname'}
+                  </InfoTooltip>
+                </div>
+                <Input
+                  id="group"
+                  placeholder="com.example"
+                  value={projectGroup}
+                  onChange={(e) => setProjectGroup(e.target.value)}
+                />
+              </div>
             </div>
 
-            <div className="flex justify-end gap-3 mt-2">
-              <Button variant="outline" onClick={() => { setIsCreateDialogOpen(false); resetForm(); }}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateProject}
-                disabled={isCreating || !packName || (projectType === 'plugin' && !packGroup)}
-                className="min-w-[140px]"
-              >
-                {isCreating ? 'Creating...' : `Create ${projectType === 'pack' ? 'Pack' : 'Plugin'}`}
-              </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center">
+                  <Label htmlFor="version" className="text-xs">Version</Label>
+                  <InfoTooltip>
+                    Version number using MAJOR.MINOR.PATCH format. Increase MAJOR for big changes, MINOR for new features, PATCH for fixes.
+                  </InfoTooltip>
+                </div>
+                <Input
+                  id="version"
+                  placeholder="1.0.0"
+                  value={projectVersion}
+                  onChange={(e) => setProjectVersion(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="author" className="text-xs">Author</Label>
+                <Input
+                  id="author"
+                  placeholder="Your Name"
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                />
+              </div>
             </div>
-          </DialogContent>
-        </Dialog>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="description" className="text-xs">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="What does this project do?"
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            {/* Plugin-specific: Hytale version */}
+            {projectType === 'plugin' && (
+              <div className="space-y-1.5">
+                <div className="flex items-center">
+                  <Label className="text-xs">Hytale Version</Label>
+                  <InfoTooltip>
+                    Which Hytale version to build against. Use Release for the stable game, or Pre-Release to test upcoming features.
+                  </InfoTooltip>
+                </div>
+                <Select value={hytaleVersion} onValueChange={(v) => setHytaleVersion(v as 'release' | 'pre-release')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="release">Release</SelectItem>
+                    <SelectItem value="pre-release">Pre-Release</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => { setIsCreateDialogOpen(false); resetForm(); }}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleCreateProject}
+              disabled={isCreating || !projectName || (projectType === 'plugin' && !projectGroup)}
+            >
+              {isCreating ? 'Creating...' : 'Create'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -370,7 +314,7 @@ export function CreateSection() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={loadProjects}
+              onClick={() => loadProjects()}
               disabled={isLoadingProjects}
               className="h-8 gap-2"
             >
@@ -381,25 +325,25 @@ export function CreateSection() {
         </div>
 
         {isLoadingProjects && projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-3xl text-center px-6">
+          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
             <p className="text-sm text-muted-foreground">Loading projects...</p>
           </div>
         ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-3xl text-center px-6">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <Package className="h-8 w-8 text-muted-foreground/50" />
+          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-xl text-center px-6">
+            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Package className="h-7 w-7 text-muted-foreground/50" />
             </div>
-            <h3 className="text-lg font-bold mb-1">No projects found</h3>
-            <p className="text-sm text-muted-foreground max-w-sm mb-6">
-              You haven't created any Hytale projects yet. Start by creating a new pack to see it here.
+            <h3 className="text-base font-medium mb-1">No projects yet</h3>
+            <p className="text-sm text-muted-foreground max-w-xs mb-5">
+              Create a pack or plugin to get started.
             </p>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(true)}>
-              Start Creating
+            <Button variant="outline" size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+              Create Project
             </Button>
           </div>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {projects.map((project) => (
               <ProjectCard
                 key={project.id}

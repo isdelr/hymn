@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import type { ProjectEntry, ServerAsset } from '@/shared/hymn-types'
+import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import type { ProjectEntry, ServerAsset, ServerAssetTemplate } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import {
     ChevronLeft,
@@ -15,7 +16,8 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+import { useDirtyFilesStore } from '@/stores'
+import { UnsavedChangesDialog } from '@/components/ui/UnsavedChangesDialog'
 
 // Components
 import { AssetGrid } from './AssetGrid'
@@ -24,9 +26,20 @@ import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
 import { PluginWorkspace } from './PluginWorkspace'
 
+// React Query hooks
+import { useAssets } from '@/hooks/queries'
+import {
+    useCreateAsset,
+    useDeleteAsset,
+    useRenameAsset,
+    useInstallProject,
+    useUninstallProject,
+    usePackageProject,
+} from '@/hooks/mutations'
+
 interface ModWorkspaceProps {
     project: ProjectEntry
-    onBack: () => void
+    onBack?: () => void
     onInstallChange?: () => void
 }
 
@@ -40,10 +53,18 @@ const NAV_ITEMS = [
 ]
 
 export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceProps) {
-    // Plugin projects use a dedicated workspace with Java source editing
-    if (project.type === 'plugin') {
-        return <PluginWorkspace project={project} onBack={onBack} onInstallChange={onInstallChange} />
-    }
+    const navigate = useNavigate()
+
+    // React Query data - always call hooks unconditionally
+    const { data: assets = [], isLoading } = useAssets(project.type !== 'plugin' ? project.path : null)
+
+    // Mutations - always call hooks unconditionally
+    const createAsset = useCreateAsset()
+    const deleteAsset = useDeleteAsset()
+    const renameAsset = useRenameAsset()
+    const installProject = useInstallProject()
+    const uninstallProject = useUninstallProject()
+    const packageProject = usePackageProject()
 
     // Navigation State
     const [activeCategory, setActiveCategory] = useState<string>('all')
@@ -52,40 +73,55 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
     // Modals
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false)
     const [isNameDialogOpen, setIsNameDialogOpen] = useState(false)
-    const [pendingTemplate, setPendingTemplate] = useState<any>(null)
+    const [pendingTemplate, setPendingTemplate] = useState<{ id: ServerAssetTemplate; label: string; category: string } | null>(null)
     const [assetToRename, setAssetToRename] = useState<ServerAsset | null>(null)
 
-    // Data
-    const [assets, setAssets] = useState<ServerAsset[]>([])
-    const [isLoading, setIsLoading] = useState(true)
-
-    // Install state
+    // Install state (local for optimistic updates)
     const [isInstalled, setIsInstalled] = useState(project.isInstalled)
-    const [isInstalling, setIsInstalling] = useState(false)
-    const [isPackaging, setIsPackaging] = useState(false)
 
-    const loadAssets = async () => {
-        setIsLoading(true)
-        try {
-            const result = await window.hymn.listServerAssets({ path: project.path })
-            setAssets(result.assets)
-        } catch (error) {
-            console.error('Failed to load assets:', error)
-            toast.error('Could not load project assets')
-        } finally {
-            setIsLoading(false)
+    // Dirty files tracking
+    const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
+    const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
+    const getDirtyFilePaths = useDirtyFilesStore((s) => s.getDirtyFilePaths)
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+    const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
+
+    const handleNavigateBack = () => {
+        navigate({ to: '/create' })
+        onBack?.()
+    }
+
+    // Plugin projects use a dedicated workspace with Java source editing
+    if (project.type === 'plugin') {
+        return <PluginWorkspace project={project} onBack={handleNavigateBack} onInstallChange={onInstallChange} />
+    }
+
+    const isInstalling = installProject.isPending || uninstallProject.isPending
+    const isPackaging = packageProject.isPending
+
+    const attemptNavigation = (navigationFn: () => void) => {
+        if (hasAnyDirtyFiles()) {
+            setPendingNavigation(() => navigationFn)
+            setShowUnsavedDialog(true)
+        } else {
+            navigationFn()
         }
     }
 
-    useEffect(() => {
-        loadAssets()
-    }, [project.path])
+    const handleDiscardAndNavigate = () => {
+        clearAllDirtyFiles()
+        setShowUnsavedDialog(false)
+        if (pendingNavigation) {
+            pendingNavigation()
+            setPendingNavigation(null)
+        }
+    }
 
     const handleAssetSelect = (asset: ServerAsset) => {
         setSelectedAsset(asset)
     }
 
-    const handleTemplateSelect = (template: any) => {
+    const handleTemplateSelect = (template: { id: ServerAssetTemplate; label: string; category: string }) => {
         setIsTemplateGalleryOpen(false)
         setPendingTemplate(template)
         setIsNameDialogOpen(true)
@@ -94,41 +130,30 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
     const handleCreateAsset = async (name: string) => {
         if (!pendingTemplate) return
 
-        try {
-            // Determine destination based on category mapping
-            let subfolder = 'Items'
-            if (pendingTemplate.category === 'Blocks') subfolder = 'Blocks'
-            if (pendingTemplate.category === 'Entities') subfolder = 'Entity'
-            if (pendingTemplate.category === 'Audio') subfolder = 'Audio'
+        // Determine destination based on category mapping
+        let subfolder = 'Items'
+        if (pendingTemplate.category === 'Blocks') subfolder = 'Blocks'
+        if (pendingTemplate.category === 'Entities') subfolder = 'Entity'
+        if (pendingTemplate.category === 'Audio') subfolder = 'Audio'
 
-            const result = await window.hymn.createServerAsset({
-                path: project.path,
-                destination: `Server/${subfolder}`,
-                name: name,
-                template: pendingTemplate.id
-            })
+        const result = await createAsset.mutateAsync({
+            projectPath: project.path,
+            destination: `Server/${subfolder}`,
+            name: name,
+            template: pendingTemplate.id
+        })
 
-            if (result.success) {
-                toast.success(`${pendingTemplate.label} created!`)
-                await loadAssets()
-                setSelectedAsset(result.asset)
-            }
-        } catch (err) {
-            console.error(err)
-            toast.error('Failed to create asset')
-        } finally {
-            setPendingTemplate(null)
+        if (result.result.success) {
+            setSelectedAsset(result.result.asset)
         }
+        setPendingTemplate(null)
     }
 
     const handleDeleteAsset = async (asset: ServerAsset) => {
         if (!confirm(`Are you sure you want to delete ${asset.name}?`)) return
-        try {
-            await window.hymn.deleteServerAsset({ path: project.path, relativePath: asset.relativePath })
-            toast.success('Asset deleted')
-            loadAssets()
-        } catch (error) {
-            toast.error('Failed to delete asset')
+        await deleteAsset.mutateAsync({ projectPath: project.path, asset })
+        if (selectedAsset?.id === asset.id) {
+            setSelectedAsset(null)
         }
     }
 
@@ -142,76 +167,36 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
     }
 
     const handleInstall = async () => {
-        setIsInstalling(true)
-        try {
-            await window.hymn.installProject({
-                projectPath: project.path,
-                projectType: 'pack',
-            })
-            setIsInstalled(true)
-            toast.success('Project installed for testing')
-            onInstallChange?.()
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to install project')
-        } finally {
-            setIsInstalling(false)
-        }
+        await installProject.mutateAsync({
+            projectPath: project.path,
+            projectType: 'pack',
+        })
+        setIsInstalled(true)
+        onInstallChange?.()
     }
 
     const handleUninstall = async () => {
         if (!project.installedPath) return
-        setIsInstalling(true)
-        try {
-            await window.hymn.uninstallProject({
-                projectPath: project.installedPath,
-            })
-            setIsInstalled(false)
-            toast.success('Project uninstalled')
-            onInstallChange?.()
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to uninstall project')
-        } finally {
-            setIsInstalling(false)
-        }
+        await uninstallProject.mutateAsync({
+            projectPath: project.installedPath,
+        })
+        setIsInstalled(false)
+        onInstallChange?.()
     }
 
     const handlePackage = async () => {
-        setIsPackaging(true)
-        try {
-            const result = await window.hymn.packageMod({ path: project.path })
-            toast.success(`Package created: ${result.outputPath}`)
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to package mod'
-            if (!message.includes('cancelled')) {
-                toast.error(message)
-            }
-        } finally {
-            setIsPackaging(false)
-        }
+        await packageProject.mutateAsync({ projectPath: project.path })
     }
 
     const handleConfirmRename = async (newName: string) => {
         if (!assetToRename) return
-        try {
-            if (newName === assetToRename.name.replace(/\.[^/.]+$/, "")) return
+        if (newName === assetToRename.name.replace(/\.[^/.]+$/, "")) return
 
-            const oldPath = assetToRename.relativePath
-            const lastDotIndex = oldPath.lastIndexOf('.')
-            const extension = lastDotIndex !== -1 ? oldPath.substring(lastDotIndex) : ''
-            const directory = oldPath.substring(0, oldPath.lastIndexOf('/'))
-            const newPath = `${directory}/${newName}${extension}`
-
-            await window.hymn.moveServerAsset({
-                path: project.path,
-                source: oldPath,
-                destination: newPath // renaming is moving
-            })
-            toast.success('Asset renamed')
-            loadAssets()
-        } catch (error) {
-            toast.error('Failed to rename asset')
-            console.error(error)
-        }
+        await renameAsset.mutateAsync({
+            projectPath: project.path,
+            asset: assetToRename,
+            newName,
+        })
     }
 
     return (
@@ -221,8 +206,14 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-4">
                         <Button variant="ghost" size="icon" onClick={() => {
-                            if (selectedAsset) setSelectedAsset(null)
-                            else onBack()
+                            if (selectedAsset) {
+                                setSelectedAsset(null)
+                            } else {
+                                attemptNavigation(() => {
+                                    clearAllDirtyFiles()
+                                    handleNavigateBack()
+                                })
+                            }
                         }} className="h-9 w-9">
                             <ChevronLeft className="h-5 w-5" />
                         </Button>
@@ -353,6 +344,17 @@ export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceP
                 }}
                 templateLabel={assetToRename ? 'Asset' : (pendingTemplate?.label || 'Asset')}
                 initialValue={assetToRename?.name.replace(/\.[^/.]+$/, "") || ''}
+            />
+
+            {/* Unsaved Changes Dialog */}
+            <UnsavedChangesDialog
+                isOpen={showUnsavedDialog}
+                onClose={() => {
+                    setShowUnsavedDialog(false)
+                    setPendingNavigation(null)
+                }}
+                onDiscard={handleDiscardAndNavigate}
+                fileCount={getDirtyFilePaths().length}
             />
         </div>
     )

@@ -1,10 +1,11 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useAppContext } from '@/context/AppContext'
+
+// React Query hooks
+import { useInstallInfo } from '@/hooks/queries'
 
 export function DiagnosticsSection() {
-  const { state } = useAppContext()
-  const { installInfo } = state
+  const { data: installInfo } = useInstallInfo()
 
   const installIssues = installInfo?.issues ?? []
 
@@ -35,7 +36,7 @@ export function DiagnosticsSection() {
               <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-3 text-xs">
                 <p className="font-medium text-muted-foreground">Install issues</p>
                 <ul className="mt-2 space-y-1 text-muted-foreground">
-                  {installIssues.map((issue) => (
+                  {installIssues.map((issue: string) => (
                     <li key={issue} className="leading-relaxed">
                       {issue}
                     </li>

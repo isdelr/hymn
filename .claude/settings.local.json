@@ -25,7 +25,13 @@
       "Bash(bun run test)",
       "Bash(npm run test:*)",
       "WebSearch",
-      "Bash(node_modules/.bin/tsc:*)"
+      "Bash(node_modules/.bin/tsc:*)",
+      "WebFetch(domain:tanstack.com)",
+      "Bash(bun add:*)",
+      "Bash(timeout 10 bun run dev:*)",
+      "Bash(bunx tsc:*)",
+      "WebFetch(domain:zustand.docs.pmnd.rs)",
+      "Bash(bun run lint:*)"
     ]
   }
 }

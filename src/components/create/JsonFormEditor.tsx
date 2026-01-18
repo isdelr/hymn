@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Save, RefreshCw, FileCode, Beaker } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,7 +15,7 @@ export function JsonFormEditor({ filePath, onSave, initialMode = 'visual' }: Jso
     const [isSaving, setIsSaving] = useState(false)
     const [mode, setMode] = useState<'visual' | 'code'>(initialMode)
 
-    const loadFile = async () => {
+    const loadFile = useCallback(async () => {
         setIsLoading(true)
         try {
             const data = await window.hymn.readFile(filePath)
@@ -25,11 +25,11 @@ export function JsonFormEditor({ filePath, onSave, initialMode = 'visual' }: Jso
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [filePath])
 
     useEffect(() => {
         loadFile()
-    }, [filePath])
+    }, [loadFile])
 
     const handleSave = async () => {
         setIsSaving(true)

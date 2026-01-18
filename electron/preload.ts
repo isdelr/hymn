@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, ThemeMode, ModSortOrder } from '../src/shared/hymn-types'
 
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -25,7 +25,6 @@ const api: HymnApi = {
   updateProfile: (profile) => ipcRenderer.invoke('hymn:update-profile', profile),
   setActiveProfile: (profileId: string) => ipcRenderer.invoke('hymn:set-active-profile', profileId),
   applyProfile: (profileId: string) => ipcRenderer.invoke('hymn:apply-profile', profileId),
-  rollbackLastApply: () => ipcRenderer.invoke('hymn:rollback-last-apply'),
   // World management methods
   getWorlds: () => ipcRenderer.invoke('hymn:get-worlds'),
   getWorldConfig: (worldId: string) => ipcRenderer.invoke('hymn:get-world-config', worldId),
@@ -48,9 +47,6 @@ const api: HymnApi = {
   deleteServerAsset: (options) => ipcRenderer.invoke('hymn:delete-server-asset', options),
   listVanillaAssets: (options) => ipcRenderer.invoke('hymn:list-vanilla-assets', options),
   importVanillaAsset: (options) => ipcRenderer.invoke('hymn:import-vanilla-asset', options),
-  getBackups: () => ipcRenderer.invoke('hymn:get-backups'),
-  restoreBackup: (backupId: string) => ipcRenderer.invoke('hymn:restore-backup', backupId),
-  deleteBackup: (backupId: string) => ipcRenderer.invoke('hymn:delete-backup', backupId),
   exportModpack: (options) => ipcRenderer.invoke('hymn:export-modpack', options),
   importModpack: () => ipcRenderer.invoke('hymn:import-modpack'),
   // World-based mod export/import
@@ -73,5 +69,29 @@ const api: HymnApi = {
   deleteJavaClass: (options) => ipcRenderer.invoke('hymn:delete-java-class', options),
 }
 
+const themeApi: HymnThemeApi = {
+  get: () => ipcRenderer.invoke('theme:get'),
+  set: (theme: ThemeMode) => ipcRenderer.invoke('theme:set', theme),
+  onChange: (callback: (isDark: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isDark: boolean) => callback(isDark)
+    ipcRenderer.on('theme:changed', handler)
+    return () => {
+      ipcRenderer.removeListener('theme:changed', handler)
+    }
+  },
+}
+
+const settingsApi: HymnSettingsApi = {
+  getTheme: () => ipcRenderer.invoke('settings:getTheme'),
+  setTheme: (theme: ThemeMode) => ipcRenderer.invoke('settings:setTheme', theme),
+  getModSortOrder: () => ipcRenderer.invoke('settings:getModSortOrder'),
+  setModSortOrder: (order: ModSortOrder) => ipcRenderer.invoke('settings:setModSortOrder', order),
+  getDefaultExportPath: () => ipcRenderer.invoke('settings:getDefaultExportPath'),
+  setDefaultExportPath: (path: string | null) => ipcRenderer.invoke('settings:setDefaultExportPath', path),
+  selectDefaultExportPath: () => ipcRenderer.invoke('settings:selectDefaultExportPath'),
+}
+
 contextBridge.exposeInMainWorld('hymn', api)
 contextBridge.exposeInMainWorld('hymnWindow', windowApi)
+contextBridge.exposeInMainWorld('hymnTheme', themeApi)
+contextBridge.exposeInMainWorld('hymnSettings', settingsApi)

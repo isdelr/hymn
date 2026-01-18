@@ -1,18 +1,37 @@
 import { useEffect, useState } from 'react'
 import { Minus, Square, X, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDirtyFilesStore } from '@/stores'
+import { UnsavedChangesDialog } from '@/components/ui/UnsavedChangesDialog'
 
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
+  const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
+  const getDirtyFilePaths = useDirtyFilesStore((s) => s.getDirtyFilePaths)
 
   useEffect(() => {
     // Get initial maximize state
     window.hymnWindow.isMaximized().then(setIsMaximized)
 
     // Listen for maximize state changes
-    const unsubscribe = window.hymnWindow.onMaximizedChange(setIsMaximized)
-    return unsubscribe
+    return window.hymnWindow.onMaximizedChange(setIsMaximized)
   }, [])
+
+  const handleClose = () => {
+    if (hasAnyDirtyFiles()) {
+      setShowUnsavedDialog(true)
+    } else {
+      window.hymnWindow.close()
+    }
+  }
+
+  const handleDiscardAndClose = () => {
+    clearAllDirtyFiles()
+    setShowUnsavedDialog(false)
+    window.hymnWindow.close()
+  }
 
   return (
     <div className="titlebar flex h-8 items-center justify-between bg-sidebar border-b border-border/30">
@@ -58,7 +77,7 @@ export function TitleBar() {
 
         {/* Close */}
         <button
-          onClick={() => window.hymnWindow.close()}
+          onClick={handleClose}
           className={cn(
             'flex h-full w-11 items-center justify-center',
             'text-muted-foreground hover:bg-destructive hover:text-white',
@@ -69,6 +88,13 @@ export function TitleBar() {
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      <UnsavedChangesDialog
+        isOpen={showUnsavedDialog}
+        onClose={() => setShowUnsavedDialog(false)}
+        onDiscard={handleDiscardAndClose}
+        fileCount={getDirtyFilePaths().length}
+      />
     </div>
   )
 }

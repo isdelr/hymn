@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -13,8 +13,6 @@ import JSZip from 'jszip'
 import * as yauzl from 'yauzl'
 import type {
   ApplyResult,
-  BackupInfo,
-  BackupSnapshot,
   CreatePackOptions,
   CreatePackResult,
   CreatePluginOptions,
@@ -35,11 +33,12 @@ import type {
   ModManifestOptions,
   ModManifestResult,
   ModType,
+  ModSortOrder,
   PackManifest,
   Profile,
   ProfilesState,
-  RollbackResult,
   SaveManifestOptions,
+  ThemeMode,
   SaveManifestResult,
   ScanResult,
   CreateServerAssetOptions,
@@ -108,15 +107,15 @@ let installPathOverride: string | null = null
 
 const DEFAULT_INSTALL_FOLDER = 'Hytale'
 const DB_FILENAME = 'hymn.sqlite'
-const BACKUP_FOLDER = 'backups'
 const DISABLED_FOLDER = 'disabled'
-const SNAPSHOT_FILENAME = 'snapshot.json'
 const SETTINGS_KEYS = {
   installPath: 'install_path_override',
   activeProfile: 'active_profile_id',
   profilesSeeded: 'profiles_seeded',
-  lastSnapshot: 'last_snapshot_id',
   selectedWorld: 'selected_world_id',
+  theme: 'app_theme',
+  modSortOrder: 'mod_sort_order',
+  defaultExportPath: 'default_export_path',
 }
 const DELETED_MODS_FOLDER = 'deleted-mods'
 
@@ -151,6 +150,11 @@ function createWindow() {
     win?.webContents.send('window:maximized-change', false)
   })
 
+  // Listen for OS theme changes and notify renderer
+  nativeTheme.on('updated', () => {
+    win?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
+  })
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
@@ -175,6 +179,13 @@ app.whenReady().then(async () => {
   await getDatabase()
   await loadPersistedSettings()
   await ensureDefaultProfile()
+
+  // Restore saved theme preference
+  const savedTheme = await readSetting(SETTINGS_KEYS.theme)
+  if (savedTheme) {
+    nativeTheme.themeSource = savedTheme as ThemeMode
+  }
+
   registerIpcHandlers()
   createWindow()
 })
@@ -233,12 +244,6 @@ async function copyPath(source: string, destination: string) {
   await fs.copyFile(source, destination)
 }
 
-async function copyPathIfExists(source: string, destination: string) {
-  if (await pathExists(source)) {
-    await copyPath(source, destination)
-  }
-}
-
 async function removePath(target: string) {
   await fs.rm(target, { recursive: true, force: true })
 }
@@ -263,10 +268,6 @@ function isWithinPath(target: string, root: string) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
-function getBackupsRoot() {
-  return path.join(app.getPath('userData'), BACKUP_FOLDER)
-}
-
 function getDisabledRoot() {
   return path.join(app.getPath('userData'), DISABLED_FOLDER)
 }
@@ -277,10 +278,6 @@ function getProjectsRoot() {
 
 function getDisabledLocationPath(location: ModLocation) {
   return path.join(getDisabledRoot(), location)
-}
-
-function createSnapshotId() {
-  return new Date().toISOString().replace(/[:.]/g, '-')
 }
 
 function getDatabasePath() {
@@ -460,11 +457,10 @@ async function profileExists(id: string) {
 }
 
 function slugifyProfileId(name: string) {
-  const slug = name
+  return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
-  return slug
 }
 
 async function createProfile(name: string): Promise<ProfilesState> {
@@ -496,8 +492,7 @@ async function updateProfile(profile: Profile): Promise<Profile> {
   if (existing?.readonly) {
     throw new Error('Cannot modify readonly profile')
   }
-  const normalized = await saveProfile(profile)
-  return normalized
+  return saveProfile(profile)
 }
 
 async function setActiveProfile(profileId: string): Promise<ProfilesState> {
@@ -674,7 +669,7 @@ async function readActiveWorldModOverrides(userDataPath: string | null) {
 }
 
 async function updateWorldModConfig(configPath: string, enabledSet: Set<string>, entries: ModEntry[]) {
-  let config: Record<string, unknown> = {}
+  let config: Record<string, unknown>
   try {
     config = await readJsonFile(configPath)
   } catch {
@@ -1072,7 +1067,7 @@ const vanillaZipState: {
 }
 
 const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, label: string) => Record<string, unknown>> = {
-  item: (id, _label) => ({
+  item: (id) => ({
     PlayerAnimationsId: 'Item',
     Categories: ['Items.Misc'],
     MaxStack: 64,
@@ -1191,7 +1186,7 @@ const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, l
     Type: "Panel",
     Layout: "Vertical"
   }),
-  category: (id, _label) => ({
+  category: (id) => ({
     Icon: `Icons/${id}.png`,
     Order: 0,
     Children: [],
@@ -1254,7 +1249,7 @@ function resolveServerAssetKind(relativePath: string, filePath: string): ServerA
     if (json.Prefab) return 'entity'
     if (json.PlayerAnimationsId || json.MaxStack) return 'item'
     if (json.Events && Array.isArray(json.Events)) return 'audio'
-  } catch { }
+  } catch { /* JSON parse failed, use 'other' */ }
 
   return 'other'
 }
@@ -2226,8 +2221,7 @@ function readManifestDependencies(value: unknown) {
   }
   // Handle object format: { "mod1": ">=1.0.0", "mod2": "*" } or empty {}
   if (typeof value === 'object' && value !== null) {
-    const keys = Object.keys(value as Record<string, unknown>)
-    return keys
+    return Object.keys(value as Record<string, unknown>)
   }
   return []
 }
@@ -2532,73 +2526,6 @@ async function scanMods(): Promise<ScanResult> {
   return { installPath: info.activePath, entries }
 }
 
-async function createBackupSnapshot(
-  profileId: string,
-  entries: ModEntry[],
-  info: InstallInfo,
-): Promise<BackupSnapshot> {
-  const createdAt = new Date().toISOString()
-  const id = createSnapshotId()
-  const backupsRoot = getBackupsRoot()
-  const snapshotRoot = path.join(backupsRoot, id)
-  const modsPath = getLocationPath(info, 'mods')
-  const packsPath = getLocationPath(info, 'packs')
-  const earlyPluginsPath = getLocationPath(info, 'earlyplugins')
-
-  await ensureDir(snapshotRoot)
-
-  if (modsPath) {
-    await copyPathIfExists(modsPath, path.join(snapshotRoot, 'mods'))
-  }
-  if (packsPath) {
-    await copyPathIfExists(packsPath, path.join(snapshotRoot, 'packs'))
-  }
-  if (earlyPluginsPath) {
-    await copyPathIfExists(earlyPluginsPath, path.join(snapshotRoot, 'earlyplugins'))
-  }
-
-  const disabledRoot = getDisabledRoot()
-  if (await pathExists(disabledRoot)) {
-    await copyPath(disabledRoot, path.join(snapshotRoot, 'disabled'))
-  }
-
-  const snapshot: BackupSnapshot = {
-    id,
-    createdAt,
-    profileId,
-    location: snapshotRoot,
-    mods: entries.map((entry) => entry.id),
-  }
-
-  await fs.writeFile(path.join(snapshotRoot, SNAPSHOT_FILENAME), JSON.stringify(snapshot, null, 2), 'utf-8')
-
-  return snapshot
-}
-
-async function readBackupSnapshot(snapshotId: string): Promise<BackupSnapshot | null> {
-  const snapshotPath = path.join(getBackupsRoot(), snapshotId, SNAPSHOT_FILENAME)
-  if (!(await pathExists(snapshotPath))) {
-    return null
-  }
-  const content = await fs.readFile(snapshotPath, 'utf-8')
-  return JSON.parse(content) as BackupSnapshot
-}
-
-async function restoreSnapshotFolder(
-  snapshotPath: string,
-  destination: string | null,
-) {
-  if (!destination) {
-    return
-  }
-  await removePath(destination)
-  if (await pathExists(snapshotPath)) {
-    await copyPath(snapshotPath, destination)
-    return
-  }
-  await ensureDir(destination)
-}
-
 async function applyProfile(profileId: string): Promise<ApplyResult> {
   const info = await resolveInstallInfo()
   if (!info.activePath) {
@@ -2612,7 +2539,6 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
   }
 
   const scan = await scanMods()
-  const snapshot = await createBackupSnapshot(profile.id, scan.entries, info)
   const enabledSet = new Set(profile.enabledMods)
   const entryIds = new Set(scan.entries.map((entry) => entry.id))
 
@@ -2654,53 +2580,10 @@ async function applyProfile(profileId: string): Promise<ApplyResult> {
   }
 
   await syncActiveWorldModConfig(info.userDataPath, enabledSet, scan.entries)
-  await writeSetting(SETTINGS_KEYS.lastSnapshot, snapshot.id)
 
   return {
     profileId: profile.id,
-    snapshotId: snapshot.id,
-    appliedAt: snapshot.createdAt,
-  }
-}
-
-async function rollbackLastApply(): Promise<RollbackResult> {
-  const snapshotId = await readSetting(SETTINGS_KEYS.lastSnapshot)
-  if (!snapshotId) {
-    throw new Error('No backup snapshot available.')
-  }
-
-  const snapshot = await readBackupSnapshot(snapshotId)
-  if (!snapshot) {
-    throw new Error('Backup snapshot not found.')
-  }
-
-  const snapshotRoot = snapshot.location
-  if (!(await pathExists(snapshotRoot))) {
-    throw new Error('Backup snapshot not found.')
-  }
-
-  const info = await resolveInstallInfo()
-  if (!info.activePath) {
-    throw new Error('Hytale install path not configured.')
-  }
-
-  const scan = await scanMods()
-  await createBackupSnapshot(`pre-rollback-${snapshotId}`, scan.entries, info)
-
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'))
-  await restoreSnapshotFolder(
-    path.join(snapshotRoot, 'packs'),
-    getLocationPath(info, 'packs'),
-  )
-  await restoreSnapshotFolder(
-    path.join(snapshotRoot, 'earlyplugins'),
-    getLocationPath(info, 'earlyplugins'),
-  )
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot())
-
-  return {
-    snapshotId,
-    restoredAt: new Date().toISOString(),
+    appliedAt: new Date().toISOString(),
   }
 }
 
@@ -3587,78 +3470,6 @@ async function deleteJavaClass(options: { projectPath: string; relativePath: str
 // END JAVA CLASS MANAGEMENT
 // ============================================================================
 
-async function getBackups(): Promise<BackupInfo[]> {
-  const backupsRoot = getBackupsRoot()
-  if (!(await pathExists(backupsRoot))) {
-    return []
-  }
-
-  const entries = await fs.readdir(backupsRoot, { withFileTypes: true })
-  const backups: BackupInfo[] = []
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-
-    const snapshotPath = path.join(backupsRoot, entry.name, SNAPSHOT_FILENAME)
-    if (!(await pathExists(snapshotPath))) continue
-
-    try {
-      const content = await fs.readFile(snapshotPath, 'utf-8')
-      const snapshot = JSON.parse(content) as BackupSnapshot
-      backups.push({
-        id: snapshot.id,
-        createdAt: snapshot.createdAt,
-        profileId: snapshot.profileId,
-        modCount: snapshot.mods?.length ?? 0,
-      })
-    } catch {
-      continue
-    }
-  }
-
-  return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-}
-
-async function restoreBackup(backupId: string): Promise<RollbackResult> {
-  const snapshot = await readBackupSnapshot(backupId)
-  if (!snapshot) {
-    throw new Error('Backup snapshot not found.')
-  }
-
-  const snapshotRoot = snapshot.location
-  if (!(await pathExists(snapshotRoot))) {
-    throw new Error('Backup snapshot files not found.')
-  }
-
-  const info = await resolveInstallInfo()
-  if (!info.activePath) {
-    throw new Error('Hytale install path not configured.')
-  }
-
-  const scan = await scanMods()
-  await createBackupSnapshot(`pre-restore-${backupId}`, scan.entries, info)
-
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'mods'), getLocationPath(info, 'mods'))
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'packs'), getLocationPath(info, 'packs'))
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'earlyplugins'), getLocationPath(info, 'earlyplugins'))
-  await restoreSnapshotFolder(path.join(snapshotRoot, 'disabled'), getDisabledRoot())
-
-  return {
-    snapshotId: backupId,
-    restoredAt: new Date().toISOString(),
-  }
-}
-
-async function deleteBackup(backupId: string): Promise<{ success: boolean }> {
-  const backupPath = path.join(getBackupsRoot(), backupId)
-  if (!(await pathExists(backupPath))) {
-    throw new Error('Backup not found.')
-  }
-
-  await removePath(backupPath)
-  return { success: true }
-}
-
 async function exportModpack(options: ExportModpackOptions): Promise<ExportModpackResult> {
   const profiles = await getProfilesFromDatabase()
   const profile = profiles.find((p) => p.id === options.profileId)
@@ -3740,12 +3551,7 @@ async function importModpack(): Promise<ImportModpackResult> {
   const scan = await scanMods()
   const knownModIds = new Set(scan.entries.map((e) => e.id))
 
-  const validEnabledMods = modpackMeta.enabledMods.filter((id) => {
-    if (!knownModIds.has(id)) {
-      return false
-    }
-    return true
-  })
+  const validEnabledMods = modpackMeta.enabledMods.filter((id) => knownModIds.has(id))
 
   await updateProfile({
     ...newProfile,
@@ -4192,7 +3998,6 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:update-profile', async (_event, profile: Profile) => updateProfile(profile))
   ipcMain.handle('hymn:set-active-profile', async (_event, profileId: string) => setActiveProfile(profileId))
   ipcMain.handle('hymn:apply-profile', async (_event, profileId: string) => applyProfile(profileId))
-  ipcMain.handle('hymn:rollback-last-apply', async () => rollbackLastApply())
   // World management handlers
   ipcMain.handle('hymn:get-worlds', async () => getWorlds())
   ipcMain.handle('hymn:get-world-config', async (_event, worldId: string) => getWorldConfig(worldId))
@@ -4223,9 +4028,6 @@ function registerIpcHandlers() {
     'hymn:import-vanilla-asset',
     async (_event, options: ImportVanillaAssetOptions) => importVanillaAsset(options),
   )
-  ipcMain.handle('hymn:get-backups', async () => getBackups())
-  ipcMain.handle('hymn:restore-backup', async (_event, backupId: string) => restoreBackup(backupId))
-  ipcMain.handle('hymn:delete-backup', async (_event, backupId: string) => deleteBackup(backupId))
   ipcMain.handle('hymn:export-modpack', async (_event, options: ExportModpackOptions) => exportModpack(options))
   ipcMain.handle('hymn:import-modpack', async () => importModpack())
   // World-based mod export/import
@@ -4251,6 +4053,48 @@ function registerIpcHandlers() {
     'hymn:delete-java-class',
     async (_event, options: { projectPath: string; relativePath: string }) => deleteJavaClass(options),
   )
+
+  // Theme handlers
+  ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors)
+  ipcMain.handle('theme:set', async (_event, theme: ThemeMode) => {
+    nativeTheme.themeSource = theme
+    await writeSetting(SETTINGS_KEYS.theme, theme)
+  })
+
+  // Settings handlers
+  ipcMain.handle('settings:getTheme', async () => {
+    const theme = await readSetting(SETTINGS_KEYS.theme)
+    return (theme as ThemeMode) || 'system'
+  })
+  ipcMain.handle('settings:setTheme', async (_event, theme: ThemeMode) => {
+    nativeTheme.themeSource = theme
+    await writeSetting(SETTINGS_KEYS.theme, theme)
+  })
+  ipcMain.handle('settings:getModSortOrder', async () => {
+    const order = await readSetting(SETTINGS_KEYS.modSortOrder)
+    return (order as ModSortOrder) || 'name'
+  })
+  ipcMain.handle('settings:setModSortOrder', async (_event, order: ModSortOrder) => {
+    await writeSetting(SETTINGS_KEYS.modSortOrder, order)
+  })
+  ipcMain.handle('settings:getDefaultExportPath', async () => {
+    return readSetting(SETTINGS_KEYS.defaultExportPath)
+  })
+  ipcMain.handle('settings:setDefaultExportPath', async (_event, exportPath: string | null) => {
+    await writeSetting(SETTINGS_KEYS.defaultExportPath, exportPath)
+  })
+  ipcMain.handle('settings:selectDefaultExportPath', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Default Export Folder',
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+    const selectedPath = result.filePaths[0]
+    await writeSetting(SETTINGS_KEYS.defaultExportPath, selectedPath)
+    return selectedPath
+  })
 
   // Window control handlers for frameless window
   ipcMain.handle('window:minimize', () => {

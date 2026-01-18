@@ -13,24 +13,56 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useAppContext } from '@/context/AppContext'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
+import type { ModEntry } from '@/shared/hymn-types'
+
+// React Query hooks
+import { useInstallInfo, useMods, useWorlds, useProfiles } from '@/hooks/queries'
+import { useSelectInstallPath, useToggleMod } from '@/hooks/mutations'
 
 export function LibrarySection() {
-  const { state, actions, activeProfile, enabledModIds, counts } = useAppContext()
-  const { installInfo, scanResult, isScanning, errorMessage } = state
+  // React Query data
+  const { data: installInfo } = useInstallInfo()
+  const { data: worldsState } = useWorlds(!!installInfo?.activePath)
+  const selectedWorldId = worldsState?.selectedWorldId ?? null
+  const { data: scanResult, isLoading: isScanning, refetch: runScan } = useMods(selectedWorldId)
+  const { data: profilesState } = useProfiles()
+
+  // Mutations
+  const selectInstallPath = useSelectInstallPath()
+  const toggleMod = useToggleMod()
+
   const [filter, setFilter] = useState('')
+
+  // Derived data
+  const activeProfile = profilesState?.profiles.find(p => p.id === profilesState.activeProfileId)
+  const enabledModIds = useMemo(() => {
+    const entries = scanResult?.entries ?? []
+    return new Set(entries.filter(e => e.enabled).map(e => e.id))
+  }, [scanResult])
+
+  const counts = useMemo(() => {
+    const entries = scanResult?.entries ?? []
+    return {
+      total: entries.length,
+      packs: entries.filter(e => e.type === 'pack').length,
+      plugins: entries.filter(e => e.type === 'plugin').length,
+      early: entries.filter(e => e.type === 'early-plugin').length,
+    }
+  }, [scanResult])
 
   const visibleEntries = useMemo(() => {
     const entries = scanResult?.entries ?? []
     if (!filter.trim()) return entries
     const lowered = filter.toLowerCase()
-    return entries.filter((entry) => {
+    return entries.filter((entry: ModEntry) => {
       return [entry.name, entry.group, entry.id]
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(lowered))
     })
   }, [filter, scanResult])
+
+  const selectedWorld = worldsState?.worlds.find(w => w.id === selectedWorldId)
 
   return (
     <>
@@ -43,10 +75,10 @@ export function LibrarySection() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={actions.handleSelectInstallPath}>
+            <Button variant="secondary" onClick={() => selectInstallPath.mutate()}>
               Choose Folder
             </Button>
-            <Button onClick={actions.runScan} disabled={isScanning || !installInfo?.activePath}>
+            <Button onClick={() => runScan()} disabled={isScanning || !installInfo?.activePath}>
               {isScanning ? 'Scanning…' : 'Rescan'}
             </Button>
           </div>
@@ -113,7 +145,6 @@ export function LibrarySection() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle className="text-base">Detected Mods</CardTitle>
-          {errorMessage ? <Badge variant="destructive">{errorMessage}</Badge> : null}
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-lg border">
@@ -138,7 +169,7 @@ export function LibrarySection() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  visibleEntries.map((entry) => {
+                  visibleEntries.map((entry: ModEntry) => {
                     const isEnabled = activeProfile ? enabledModIds.has(entry.id) : entry.enabled
                     return (
                       <TableRow key={`${entry.location}-${entry.path}`}>
@@ -163,8 +194,10 @@ export function LibrarySection() {
                         <TableCell>
                           <Switch
                             checked={isEnabled}
-                            disabled={!activeProfile}
-                            onCheckedChange={(checked) => actions.handleToggleMod(entry, checked)}
+                            disabled={!selectedWorld}
+                            onCheckedChange={(checked) =>
+                              selectedWorld && toggleMod.mutate({ worldId: selectedWorld.id, entry, enabled: checked })
+                            }
                             aria-label={`Toggle ${entry.name}`}
                           />
                         </TableCell>

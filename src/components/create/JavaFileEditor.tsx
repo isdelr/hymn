@@ -1,9 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import { JavaSourceFile } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Save, RefreshCw, FileCode, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { useDirtyFilesStore } from '@/stores'
 
 interface JavaFileEditorProps {
     file: JavaSourceFile | null
@@ -17,6 +19,10 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const { theme: monacoTheme } = useMonacoTheme()
+    const setDirtyFile = useDirtyFilesStore((s) => s.setDirtyFile)
+    const clearDirtyFile = useDirtyFilesStore((s) => s.clearDirtyFile)
+    const getDirtyContent = useDirtyFilesStore((s) => s.getDirtyContent)
 
     const isDirty = content !== originalContent
 
@@ -26,20 +32,37 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
         setIsLoading(true)
         setError(null)
         try {
+            // Check if we have unsaved changes for this file
+            const dirtyContent = getDirtyContent(file.absolutePath)
+
+            // Always load the original from disk
             const data = await window.hymn.readFile(file.absolutePath)
-            setContent(data)
             setOriginalContent(data)
+
+            // Use dirty content if available, otherwise use disk content
+            if (dirtyContent !== undefined) {
+                setContent(dirtyContent)
+            } else {
+                setContent(data)
+            }
         } catch (err) {
             console.error('Failed to load file:', err)
             setError('Failed to load file')
         } finally {
             setIsLoading(false)
         }
-    }, [file])
+    }, [file, getDirtyContent])
 
     useEffect(() => {
         loadFile()
     }, [loadFile])
+
+    // Update dirty files context when content changes
+    useEffect(() => {
+        if (file && originalContent) {
+            setDirtyFile(file.absolutePath, content, originalContent)
+        }
+    }, [file, content, originalContent, setDirtyFile])
 
     const handleSave = async () => {
         if (!file) return
@@ -48,6 +71,7 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
         try {
             await onSave(content)
             setOriginalContent(content)
+            clearDirtyFile(file.absolutePath)
         } catch (err) {
             console.error('Failed to save file:', err)
             setError('Failed to save file')
@@ -57,8 +81,15 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
     }
 
     const handleDiscard = () => {
-        setContent(originalContent)
+        if (file) {
+            setContent(originalContent)
+            clearDirtyFile(file.absolutePath)
+        }
     }
+
+    // Keep a ref to handleSave for the keyboard shortcut effect
+    const handleSaveRef = useRef(handleSave)
+    handleSaveRef.current = handleSave
 
     // Handle keyboard shortcuts
     useEffect(() => {
@@ -66,13 +97,13 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault()
                 if (isDirty) {
-                    handleSave()
+                    handleSaveRef.current()
                 }
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [isDirty, content])
+    }, [isDirty])
 
     if (!file) {
         return (
@@ -163,7 +194,7 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
                 <Editor
                     height="100%"
                     language="java"
-                    theme="vs-dark"
+                    theme={monacoTheme}
                     value={content}
                     onChange={(value) => setContent(value || '')}
                     options={{

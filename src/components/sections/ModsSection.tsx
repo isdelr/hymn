@@ -43,10 +43,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useAppContext } from '@/context/AppContext'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
 import { cn } from '@/lib/utils'
 import type { ModEntry } from '@/shared/hymn-types'
+
+// React Query hooks
+import { useInstallInfo, useWorlds, useMods } from '@/hooks/queries'
+import {
+  useToggleMod,
+  useDeleteMod,
+  useAddMods,
+  useSelectWorld,
+  useExportWorldMods,
+  useImportWorldMods,
+} from '@/hooks/mutations'
 
 const getModIcon = (type: ModEntry['type']) => {
   switch (type) {
@@ -102,26 +112,30 @@ const formatFileSize = (bytes: number | undefined): string => {
 }
 
 export function ModsSection() {
-  const {
-    state,
-    actions,
-    selectedWorld,
-    enabledModIds,
-  } = useAppContext()
-  const {
-    installInfo,
-    scanResult,
-    worldsState,
-    isScanning,
-    errorMessage,
-    worldError,
-    isTogglingMod,
-  } = state
+  // React Query data
+  const { data: installInfo } = useInstallInfo()
+  const { data: worldsState } = useWorlds(!!installInfo?.activePath)
+  const selectedWorldId = worldsState?.selectedWorldId ?? null
+  const { data: scanResult, isLoading: isScanning, refetch: runScan } = useMods(selectedWorldId)
+
+  // Mutations
+  const toggleMod = useToggleMod()
+  const deleteMod = useDeleteMod()
+  const addMods = useAddMods()
+  const selectWorld = useSelectWorld()
+  const exportWorldMods = useExportWorldMods()
+  const importWorldMods = useImportWorldMods()
 
   const [filter, setFilter] = useState('')
   const [modToDelete, setModToDelete] = useState<ModEntry | null>(null)
-  const [isExporting, setIsExporting] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
+
+  // Derived state
+  const isTogglingMod = toggleMod.isPending || deleteMod.isPending || addMods.isPending || selectWorld.isPending
+  const selectedWorld = worldsState?.worlds.find((w) => w.id === selectedWorldId) ?? null
+  const enabledModIds = useMemo(() => {
+    const entries = scanResult?.entries ?? []
+    return new Set(entries.filter((entry) => entry.enabled).map((entry) => entry.id))
+  }, [scanResult])
 
   const visibleEntries = useMemo(() => {
     const entries = scanResult?.entries ?? []
@@ -136,41 +150,17 @@ export function ModsSection() {
 
   const handleDeleteMod = async () => {
     if (!modToDelete) return
-    await actions.handleDeleteMod(modToDelete)
+    await deleteMod.mutateAsync({ entry: modToDelete, worldId: selectedWorldId })
     setModToDelete(null)
   }
 
   const handleExportWorldMods = async () => {
     if (!selectedWorld) return
-    setIsExporting(true)
-    try {
-      const result = await window.hymn.exportWorldMods({ worldId: selectedWorld.id })
-      // Toast or notification could be added here
-      console.log(`Exported ${result.modCount} mods to ${result.outputPath}`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to export mods.'
-      if (!message.includes('cancelled')) {
-        console.error(message)
-      }
-    } finally {
-      setIsExporting(false)
-    }
+    exportWorldMods.mutate(selectedWorld.id)
   }
 
   const handleImportWorldMods = async () => {
-    setIsImporting(true)
-    try {
-      const result = await window.hymn.importWorldMods()
-      console.log(`Imported ${result.modsImported} mods, skipped ${result.modsSkipped}`)
-      await actions.runScan()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to import mods.'
-      if (!message.includes('cancelled')) {
-        console.error(message)
-      }
-    } finally {
-      setIsImporting(false)
-    }
+    importWorldMods.mutate()
   }
 
   const worlds = worldsState?.worlds ?? []
@@ -187,7 +177,7 @@ export function ModsSection() {
         {hasWorlds ? (
           <Select
             value={selectedWorld?.id ?? ''}
-            onValueChange={(worldId) => actions.handleSelectWorld(worldId)}
+            onValueChange={(worldId) => selectWorld.mutate(worldId)}
             disabled={isScanning || isTogglingMod}
           >
             <SelectTrigger className="w-[220px] h-10 bg-muted/30 border-border/50">
@@ -226,30 +216,22 @@ export function ModsSection() {
             variant="ghost"
             size="icon"
             onClick={handleExportWorldMods}
-            disabled={isExporting || isImporting || !selectedWorld || isScanning}
+            disabled={exportWorldMods.isPending || importWorldMods.isPending || !selectedWorld || isScanning}
             className="h-8 w-8"
           >
-            <Download className={cn("h-4 w-4", isExporting && "animate-pulse")} />
+            <Download className={cn("h-4 w-4", exportWorldMods.isPending && "animate-pulse")} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleImportWorldMods}
-            disabled={isExporting || isImporting || isScanning || !installInfo?.activePath}
+            disabled={exportWorldMods.isPending || importWorldMods.isPending || isScanning || !installInfo?.activePath}
             className="h-8 w-8"
           >
-            <Upload className={cn("h-4 w-4", isImporting && "animate-pulse")} />
+            <Upload className={cn("h-4 w-4", importWorldMods.isPending && "animate-pulse")} />
           </Button>
         </div>
       </div>
-
-      {/* Error message */}
-      {worldError && (
-        <div className="flex items-center gap-3 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-          <p className="text-sm text-destructive">{worldError}</p>
-        </div>
-      )}
 
       {/* Search & Actions Bar */}
       <div className="flex items-center gap-3">
@@ -273,7 +255,7 @@ export function ModsSection() {
         <Button
           variant="outline"
           size="default"
-          onClick={actions.handleAddMods}
+          onClick={() => addMods.mutate(selectedWorldId)}
           disabled={isScanning || isTogglingMod || !installInfo?.activePath}
           className="h-10 gap-2 border-border/50"
         >
@@ -283,7 +265,7 @@ export function ModsSection() {
         <Button
           variant="outline"
           size="default"
-          onClick={actions.runScan}
+          onClick={() => runScan()}
           disabled={isScanning || isTogglingMod || !installInfo?.activePath}
           className="h-10 gap-2 border-border/50"
         >
@@ -291,14 +273,6 @@ export function ModsSection() {
           {isScanning ? 'Scanning' : 'Rescan'}
         </Button>
       </div>
-
-      {/* Scan Error */}
-      {errorMessage && (
-        <div className="flex items-center gap-3 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-          <p className="text-sm text-destructive">{errorMessage}</p>
-        </div>
-      )}
 
       {/* No World Selected Warning */}
       {!selectedWorld && hasWorlds && (
@@ -392,7 +366,13 @@ export function ModsSection() {
                             <Switch
                               checked={isEnabled}
                               disabled={!canToggle}
-                              onCheckedChange={(checked) => actions.handleToggleMod(entry, checked)}
+                              onCheckedChange={(checked) =>
+                                toggleMod.mutate({
+                                  worldId: selectedWorld!.id,
+                                  entry,
+                                  enabled: checked,
+                                })
+                              }
                               aria-label={`Toggle ${entry.name}`}
                               className="shrink-0"
                             />

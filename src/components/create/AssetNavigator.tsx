@@ -15,7 +15,7 @@ import { ServerAssetKind } from '@/shared/hymn-types'
 interface AssetCategory {
     id: ServerAssetKind | 'all' | 'files'
     label: string
-    icon: any
+    icon: React.ComponentType<{ className?: string }>
 }
 
 const CATEGORIES: AssetCategory[] = [
