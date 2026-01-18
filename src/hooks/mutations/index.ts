@@ -34,4 +34,6 @@ export {
   useSetJdkPath,
   useSelectJdkPath,
   useOpenBuildsFolder,
+  useSetServerJarPath,
+  useSelectServerJarPath,
 } from './useBuildMutations'

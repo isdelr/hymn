@@ -105,6 +105,10 @@ const settingsApi: HymnSettingsApi = {
   getJdkPath: () => ipcRenderer.invoke('settings:getJdkPath'),
   setJdkPath: (path: string | null) => ipcRenderer.invoke('settings:setJdkPath', path),
   selectJdkPath: () => ipcRenderer.invoke('settings:selectJdkPath'),
+  // HytaleServer.jar path configuration
+  getServerJarPath: () => ipcRenderer.invoke('settings:getServerJarPath'),
+  setServerJarPath: (path: string | null) => ipcRenderer.invoke('settings:setServerJarPath', path),
+  selectServerJarPath: () => ipcRenderer.invoke('settings:selectServerJarPath'),
 }
 
 contextBridge.exposeInMainWorld('hymn', api)

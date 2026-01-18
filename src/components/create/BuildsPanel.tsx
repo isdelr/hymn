@@ -67,6 +67,13 @@ function formatDuration(ms: number): string {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
 }
 
+// Extract build number from artifact path (e.g., "MyMod-1.0.0-build2.jar" -> 2)
+function getBuildNumber(outputPath: string): number | null {
+  const filename = outputPath.split(/[/\\]/).pop() || ''
+  const match = filename.match(/-build(\d+)\.(jar|zip)$/)
+  return match ? parseInt(match[1], 10) : null
+}
+
 interface ArtifactCardProps {
   artifact: BuildArtifact
   onDelete: (artifact: BuildArtifact) => void
@@ -76,6 +83,7 @@ interface ArtifactCardProps {
 
 function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardProps) {
   const isPlugin = artifact.artifactType === 'jar'
+  const buildNumber = getBuildNumber(artifact.outputPath)
 
   return (
     <div className="group relative flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
@@ -96,7 +104,12 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
           </Badge>
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-          <span>v{artifact.version}</span>
+          <span>
+            v{artifact.version}
+            {buildNumber && (
+              <span className="text-muted-foreground/60 ml-1">(build {buildNumber})</span>
+            )}
+          </span>
           <span className="flex items-center gap-1">
             <HardDrive className="h-3 w-3" />
             {formatFileSize(artifact.fileSize)}
@@ -113,17 +126,21 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
 
       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-8 gap-1.5"
-          onClick={() => onInstall(artifact)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onInstall(artifact)
+          }}
         >
           <Download className="h-3.5 w-3.5" />
           Install
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8">
               <span className="sr-only">More actions</span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -143,13 +160,13 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onReveal(artifact)}>
+            <DropdownMenuItem onSelect={() => onReveal(artifact)}>
               <FolderOpen className="mr-2 h-4 w-4" />
               Show in Explorer
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onDelete(artifact)}
+              onSelect={() => onDelete(artifact)}
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -162,8 +179,17 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
   )
 }
 
-export function BuildsPanel() {
-  const { data: artifacts = [], isLoading, refetch } = useBuildArtifacts()
+interface BuildsPanelProps {
+  projectName?: string
+}
+
+export function BuildsPanel({ projectName }: BuildsPanelProps) {
+  const { data: allArtifacts = [], isLoading, refetch } = useBuildArtifacts()
+
+  // Filter artifacts by project name if provided
+  const artifacts = projectName
+    ? allArtifacts.filter(a => a.projectName === projectName)
+    : allArtifacts
   const deleteArtifact = useDeleteBuildArtifact()
   const clearAllArtifacts = useClearAllBuildArtifacts()
   const copyToMods = useCopyArtifactToMods()
@@ -184,7 +210,15 @@ export function BuildsPanel() {
   }
 
   const confirmClearAll = async () => {
-    await clearAllArtifacts.mutateAsync()
+    if (projectName) {
+      // Delete only this project's artifacts
+      for (const artifact of artifacts) {
+        await deleteArtifact.mutateAsync({ artifactId: artifact.id })
+      }
+    } else {
+      // Delete all artifacts globally
+      await clearAllArtifacts.mutateAsync()
+    }
     setShowClearAllDialog(false)
   }
 
@@ -239,7 +273,7 @@ export function BuildsPanel() {
               className="h-8 gap-2 text-destructive hover:text-destructive"
             >
               <Trash2 className="h-4 w-4" />
-              Clear All
+              Delete All
             </Button>
           )}
         </div>
@@ -257,15 +291,31 @@ export function BuildsPanel() {
           </div>
           <h3 className="text-base font-medium mb-1">No builds yet</h3>
           <p className="text-sm text-muted-foreground max-w-xs">
-            Build a plugin or package an asset pack to see artifacts here.
+            {projectName
+              ? 'Build this project to see artifacts here.'
+              : 'Build a plugin or package an asset pack to see artifacts here.'}
           </p>
         </div>
+      ) : projectName ? (
+        // Project-scoped mode: flat list without grouping
+        <div className="space-y-2">
+          {artifacts.map((artifact) => (
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              onDelete={handleDelete}
+              onInstall={handleInstall}
+              onReveal={handleReveal}
+            />
+          ))}
+        </div>
       ) : (
+        // Global mode: group by project
         <div className="space-y-6">
-          {Object.entries(groupedArtifacts).map(([projectName, projectArtifacts]) => (
-            <div key={projectName} className="space-y-2">
+          {Object.entries(groupedArtifacts).map(([groupProjectName, projectArtifacts]) => (
+            <div key={groupProjectName} className="space-y-2">
               <h3 className="text-xs font-medium text-muted-foreground px-1">
-                {projectName}
+                {groupProjectName}
               </h3>
               <div className="space-y-2">
                 {projectArtifacts.map((artifact) => (
@@ -311,9 +361,14 @@ export function BuildsPanel() {
       <AlertDialog open={showClearAllDialog} onOpenChange={setShowClearAllDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear All Build Artifacts</AlertDialogTitle>
+            <AlertDialogTitle>
+              {projectName ? `Delete All ${projectName} Builds` : 'Delete All Build Artifacts'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete all {artifacts.length} build artifact{artifacts.length === 1 ? '' : 's'}? This will permanently remove all JARs and ZIPs from the builds folder. This action cannot be undone.
+              {projectName
+                ? `Are you sure you want to delete all ${artifacts.length} build artifact${artifacts.length === 1 ? '' : 's'} for ${projectName}? This action cannot be undone.`
+                : `Are you sure you want to delete all ${artifacts.length} build artifact${artifacts.length === 1 ? '' : 's'}? This will permanently remove all JARs and ZIPs from the builds folder. This action cannot be undone.`
+              }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -322,7 +377,7 @@ export function BuildsPanel() {
               onClick={confirmClearAll}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Clear All
+              Delete All
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

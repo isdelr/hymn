@@ -46,8 +46,8 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
                 setContent(data)
             }
         } catch (err) {
-            console.error('Failed to load file:', err)
-            setError('Failed to load file')
+            console.error('Failed to load file:', file?.absolutePath, err)
+            setError(`Failed to load file: ${err instanceof Error ? err.message : 'Unknown error'}`)
         } finally {
             setIsLoading(false)
         }

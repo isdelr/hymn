@@ -171,3 +171,42 @@ export function useOpenBuildsFolder() {
     },
   })
 }
+
+export function useSetServerJarPath() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (serverJarPath: string | null) => {
+      await window.hymnSettings.setServerJarPath(serverJarPath)
+      return serverJarPath
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.serverJarPath })
+      queryClient.invalidateQueries({ queryKey: queryKeys.builds.dependencies })
+      toast.success('HytaleServer.jar path updated')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to update server jar path')
+    },
+  })
+}
+
+export function useSelectServerJarPath() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      return await window.hymnSettings.selectServerJarPath()
+    },
+    onSuccess: (selectedPath) => {
+      if (selectedPath) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.serverJarPath })
+        queryClient.invalidateQueries({ queryKey: queryKeys.builds.dependencies })
+        toast.success('HytaleServer.jar path updated')
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to select server jar path')
+    },
+  })
+}

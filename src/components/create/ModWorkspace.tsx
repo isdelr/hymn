@@ -12,6 +12,8 @@ import {
     Monitor,
     ExternalLink,
     Play,
+    Archive,
+    Settings,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -25,9 +27,11 @@ import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
 import { PluginWorkspace } from './PluginWorkspace'
 import { BuildOutputDialog } from './BuildOutputDialog'
+import { BuildsPanel } from './BuildsPanel'
+import { ProjectSettingsDialog } from './ProjectSettingsDialog'
 
 // React Query hooks
-import { useAssets } from '@/hooks/queries'
+import { useAssets, useProjects } from '@/hooks/queries'
 import {
     useCreateAsset,
     useDeleteAsset,
@@ -39,6 +43,7 @@ import {
 interface ModWorkspaceProps {
     project: ProjectEntry
     onBack?: () => void
+    onProjectUpdated?: () => void
 }
 
 const NAV_ITEMS = [
@@ -48,13 +53,15 @@ const NAV_ITEMS = [
     { id: 'entity', label: 'Entities', icon: Users },
     { id: 'audio', label: 'Audio', icon: Music },
     { id: 'ui', label: 'Interface', icon: Monitor },
+    { id: 'builds', label: 'Builds', icon: Archive },
 ]
 
-export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
+export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspaceProps) {
     const navigate = useNavigate()
 
     // React Query data - always call hooks unconditionally
     const { data: assets = [], isLoading } = useAssets(project.type !== 'plugin' ? project.path : null)
+    const { refetch: refetchProjects } = useProjects()
 
     // Mutations - always call hooks unconditionally
     const createAsset = useCreateAsset()
@@ -77,6 +84,9 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
     const [buildResult, setBuildResult] = useState<BuildPackResult | null>(null)
     const [showBuildDialog, setShowBuildDialog] = useState(false)
 
+    // Project settings dialog state
+    const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
     const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
@@ -91,7 +101,7 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
 
     // Plugin projects use a dedicated workspace with Java source editing
     if (project.type === 'plugin') {
-        return <PluginWorkspace project={project} onBack={handleNavigateBack} />
+        return <PluginWorkspace project={project} onBack={handleNavigateBack} onProjectUpdated={onProjectUpdated} />
     }
 
     const isBuilding = buildPack.isPending
@@ -211,6 +221,14 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
                                 <span>v{project.version || '1.0.0'}</span>
                             </div>
                         </div>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShowSettingsDialog(true)}
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        >
+                            <Settings className="h-4 w-4" />
+                        </Button>
                     </div>
 
                     <div className="h-8 w-px bg-border/50 mx-2" />
@@ -268,7 +286,11 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-hidden relative bg-muted/5">
-                {isLoading ? (
+                {activeCategory === 'builds' ? (
+                    <div className="p-6 overflow-auto h-full">
+                        <BuildsPanel projectName={project.name} />
+                    </div>
+                ) : isLoading ? (
                     <div className="flex-1 h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
                         <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                         <p className="text-xs font-bold uppercase tracking-widest text-primary">Scanning Project...</p>
@@ -334,6 +356,18 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
                 result={buildResult}
                 type="pack"
                 onRevealArtifact={buildResult?.artifact ? handleRevealBuildArtifact : undefined}
+            />
+
+            {/* Project Settings Dialog */}
+            <ProjectSettingsDialog
+                isOpen={showSettingsDialog}
+                onClose={() => setShowSettingsDialog(false)}
+                projectPath={project.path}
+                projectFormat={project.format}
+                onSaved={() => {
+                    refetchProjects()
+                    onProjectUpdated?.()
+                }}
             />
         </div>
     )

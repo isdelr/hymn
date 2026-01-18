@@ -10,6 +10,8 @@ import {
     Package,
     ExternalLink,
     AlertTriangle,
+    Archive,
+    Settings,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDirtyFilesStore } from '@/stores'
@@ -25,10 +27,11 @@ import { AssetDetails } from './AssetDetails'
 import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
 import { BuildOutputDialog } from './BuildOutputDialog'
-import { DependencyStatus } from './DependencyBanner'
+import { BuildsPanel } from './BuildsPanel'
+import { ProjectSettingsDialog } from './ProjectSettingsDialog'
 
 // React Query hooks
-import { useJavaSources, useAssets, useDependencies } from '@/hooks/queries'
+import { useJavaSources, useAssets, useDependencies, useProjects } from '@/hooks/queries'
 import {
     useCreateJavaClass,
     useDeleteJavaFile,
@@ -43,11 +46,12 @@ import {
 interface PluginWorkspaceProps {
     project: ProjectEntry
     onBack: () => void
+    onProjectUpdated?: () => void
 }
 
-type WorkspaceMode = 'source' | 'assets'
+type WorkspaceMode = 'source' | 'assets' | 'builds'
 
-export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
+export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWorkspaceProps) {
     // Mode: source code vs assets (for plugins with includesAssetPack)
     const [mode, setMode] = useState<WorkspaceMode>('source')
 
@@ -57,6 +61,7 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
         project.includesAssetPack ? project.path : null
     )
     const { data: dependencies } = useDependencies()
+    const { refetch: refetchProjects } = useProjects()
 
     const sources = sourceData?.sources ?? []
     const basePackage = sourceData?.basePackage ?? ''
@@ -92,6 +97,9 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
     // Build output dialog state
     const [buildResult, setBuildResult] = useState<BuildPluginResult | null>(null)
     const [showBuildDialog, setShowBuildDialog] = useState(false)
+
+    // Project settings dialog state
+    const [showSettingsDialog, setShowSettingsDialog] = useState(false)
 
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
@@ -265,41 +273,59 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
                                 <span>v{project.version || '1.0.0'}</span>
                             </div>
                         </div>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShowSettingsDialog(true)}
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        >
+                            <Settings className="h-4 w-4" />
+                        </Button>
                     </div>
 
-                    {project.includesAssetPack && (
-                        <>
-                            <div className="h-8 w-px bg-border/50 mx-2" />
+                    <div className="h-8 w-px bg-border/50 mx-2" />
 
-                            {/* Mode Toggle */}
-                            <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
-                                <button
-                                    onClick={() => setMode('source')}
-                                    className={cn(
-                                        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                                        mode === 'source'
-                                            ? "bg-background shadow-sm text-foreground"
-                                            : "text-muted-foreground hover:text-foreground"
-                                    )}
-                                >
-                                    <Code className="h-4 w-4" />
-                                    Source
-                                </button>
-                                <button
-                                    onClick={() => setMode('assets')}
-                                    className={cn(
-                                        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                                        mode === 'assets'
-                                            ? "bg-background shadow-sm text-foreground"
-                                            : "text-muted-foreground hover:text-foreground"
-                                    )}
-                                >
-                                    <Package className="h-4 w-4" />
-                                    Assets
-                                </button>
-                            </div>
-                        </>
-                    )}
+                    {/* Mode Toggle */}
+                    <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
+                        <button
+                            onClick={() => setMode('source')}
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                                mode === 'source'
+                                    ? "bg-background shadow-sm text-foreground"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            <Code className="h-4 w-4" />
+                            Source
+                        </button>
+                        {project.includesAssetPack && (
+                            <button
+                                onClick={() => setMode('assets')}
+                                className={cn(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                                    mode === 'assets'
+                                        ? "bg-background shadow-sm text-foreground"
+                                        : "text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                <Package className="h-4 w-4" />
+                                Assets
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setMode('builds')}
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                                mode === 'builds'
+                                    ? "bg-background shadow-sm text-foreground"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            <Archive className="h-4 w-4" />
+                            Builds
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -339,12 +365,11 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
                                 </div>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>Java 17+ is required to build plugins.</p>
-                                <p className="text-xs text-muted-foreground">Configure JDK path in the Create tab.</p>
+                                <p>Java 25+ and Hytale are required to build plugins.</p>
+                                <p className="text-xs text-muted-foreground">Check the Create tab for missing dependencies.</p>
                             </TooltipContent>
                         </Tooltip>
                     )}
-                    <DependencyStatus />
                 </div>
             </header>
 
@@ -374,6 +399,11 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
                                 onClose={() => setSelectedFile(null)}
                             />
                         </div>
+                    </div>
+                ) : mode === 'builds' ? (
+                    /* Builds Mode */
+                    <div className="p-6 overflow-auto h-full">
+                        <BuildsPanel projectName={project.name} />
                     </div>
                 ) : (
                     /* Assets Mode */
@@ -464,6 +494,18 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
                 result={buildResult}
                 type="plugin"
                 onRevealArtifact={buildResult?.artifact ? handleRevealBuildArtifact : undefined}
+            />
+
+            {/* Project Settings Dialog */}
+            <ProjectSettingsDialog
+                isOpen={showSettingsDialog}
+                onClose={() => setShowSettingsDialog(false)}
+                projectPath={project.path}
+                projectFormat={project.format}
+                onSaved={() => {
+                    refetchProjects()
+                    onProjectUpdated?.()
+                }}
             />
         </div>
     )

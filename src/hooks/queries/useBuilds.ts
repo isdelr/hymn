@@ -30,3 +30,12 @@ export function useJdkPath() {
     },
   })
 }
+
+export function useServerJarPath() {
+  return useQuery<string | null>({
+    queryKey: queryKeys.settings.serverJarPath,
+    queryFn: async () => {
+      return await window.hymnSettings.getServerJarPath()
+    },
+  })
+}

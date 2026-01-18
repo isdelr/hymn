@@ -68,6 +68,7 @@ function ProjectWorkspacePage() {
   return (
     <ModWorkspace
       project={project}
+      onProjectUpdated={loadProject}
     />
   )
 }

@@ -32,7 +32,10 @@
       "Bash(bunx tsc:*)",
       "WebFetch(domain:zustand.docs.pmnd.rs)",
       "Bash(bun run lint:*)",
-      "WebFetch(domain:docs.gradle.org)"
+      "WebFetch(domain:docs.gradle.org)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash(test:*)",
+      "Bash(npm run lint)"
     ]
   }
 }

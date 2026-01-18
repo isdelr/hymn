@@ -38,6 +38,7 @@ export const queryKeys = {
     modSortOrder: ['settings', 'modSortOrder'] as const,
     defaultExportPath: ['settings', 'defaultExportPath'] as const,
     jdkPath: ['settings', 'jdkPath'] as const,
+    serverJarPath: ['settings', 'serverJarPath'] as const,
   },
 
   builds: {

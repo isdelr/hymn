@@ -28,6 +28,9 @@ if (!window.hymnSettings) {
     getJdkPath: vi.fn().mockResolvedValue(null),
     setJdkPath: vi.fn().mockResolvedValue(undefined),
     selectJdkPath: vi.fn().mockResolvedValue(null),
+    getServerJarPath: vi.fn().mockResolvedValue(null),
+    setServerJarPath: vi.fn().mockResolvedValue(undefined),
+    selectServerJarPath: vi.fn().mockResolvedValue(null),
   }
 }
 

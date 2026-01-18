@@ -500,8 +500,20 @@ export interface JavaDependencyInfo {
   downloadInstructions: string
 }
 
+// Hytale installation dependency types
+export type HytaleDependencyStatus = 'found' | 'missing'
+
+export interface HytaleDependencyInfo {
+  status: HytaleDependencyStatus
+  hytalePath: string | null
+  serverJarPath: string | null
+  patchline: string
+  issues: string[]
+}
+
 export interface CheckDependenciesResult {
   java: JavaDependencyInfo
+  hytale: HytaleDependencyInfo
   canBuildPlugins: boolean
   canBuildPacks: boolean // Always true - no dependencies needed
 }
@@ -641,6 +653,10 @@ export interface HymnSettingsApi {
   getJdkPath: () => Promise<string | null>
   setJdkPath: (path: string | null) => Promise<void>
   selectJdkPath: () => Promise<string | null>
+  // HytaleServer.jar path configuration
+  getServerJarPath: () => Promise<string | null>
+  setServerJarPath: (path: string | null) => Promise<void>
+  selectServerJarPath: () => Promise<string | null>
 }
 
 // Global window augmentation

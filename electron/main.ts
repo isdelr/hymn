@@ -101,6 +101,7 @@ import type {
   CopyArtifactToModsResult,
   CheckDependenciesResult,
   JavaDependencyInfo,
+  HytaleDependencyInfo,
   BuildPluginOptions,
   BuildPluginResult,
   BuildPackOptions,
@@ -126,6 +127,7 @@ const DISABLED_FOLDER = 'disabled'
 const SETTINGS_KEYS = {
   installPath: 'install_path_override',
   activeProfile: 'active_profile_id',
+  serverJarPath: 'server_jar_path',
   profilesSeeded: 'profiles_seeded',
   selectedWorld: 'selected_world_id',
   theme: 'app_theme',
@@ -1548,6 +1550,29 @@ async function saveModManifest(options: SaveManifestOptions): Promise<SaveManife
   await ensureDir(path.dirname(manifestPath))
   await fs.writeFile(manifestPath, JSON.stringify(parsed, null, 2), 'utf-8')
 
+  // For plugins: also update gradle.properties if it exists (so the build uses the new version)
+  const gradlePropertiesPath = path.join(options.path, 'gradle.properties')
+  if (await pathExists(gradlePropertiesPath)) {
+    try {
+      let gradleProps = await fs.readFile(gradlePropertiesPath, 'utf-8')
+
+      // Update version if it changed
+      if (parsed.Version && typeof parsed.Version === 'string') {
+        gradleProps = gradleProps.replace(/^version=.*/m, `version=${parsed.Version}`)
+      }
+
+      // Update includes_pack if it changed
+      if (typeof parsed.IncludesAssetPack === 'boolean') {
+        gradleProps = gradleProps.replace(/^includes_pack=.*/m, `includes_pack=${parsed.IncludesAssetPack}`)
+      }
+
+      await fs.writeFile(gradlePropertiesPath, gradleProps, 'utf-8')
+    } catch {
+      // If we can't update gradle.properties, just continue - manifest was saved
+      console.warn('Failed to update gradle.properties')
+    }
+  }
+
   return { success: true }
 }
 
@@ -1640,9 +1665,11 @@ function getJavaDownloadInstructions(): string {
 
 async function checkDependencies(): Promise<CheckDependenciesResult> {
   const javaInfo = await checkJavaDependency()
+  const hytaleInfo = await checkHytaleDependency()
   return {
     java: javaInfo,
-    canBuildPlugins: javaInfo.status === 'found',
+    hytale: hytaleInfo,
+    canBuildPlugins: javaInfo.status === 'found' && hytaleInfo.status === 'found',
     canBuildPacks: true, // Packs don't need external dependencies
   }
 }
@@ -1753,6 +1780,73 @@ async function checkJavaDependency(): Promise<JavaDependencyInfo> {
   }
 }
 
+function getDefaultHytalePath(): string {
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || '', 'Hytale')
+  } else if (process.platform === 'darwin') {
+    return path.join(process.env.HOME || '', 'Library', 'Application Support', 'Hytale')
+  } else {
+    return path.join(process.env.HOME || '', '.local', 'share', 'Hytale')
+  }
+}
+
+function getDefaultServerJarPath(hytalePath: string, patchline: string): string {
+  return path.join(hytalePath, 'install', patchline, 'package', 'game', 'latest', 'Server', 'HytaleServer.jar')
+}
+
+async function checkHytaleDependency(): Promise<HytaleDependencyInfo> {
+  const patchline = 'release' // Default patchline
+  const hytalePath = getDefaultHytalePath()
+
+  // Check for custom server jar path first
+  const customServerJarPath = await readSetting(SETTINGS_KEYS.serverJarPath)
+
+  if (customServerJarPath && await pathExists(customServerJarPath)) {
+    return {
+      status: 'found',
+      hytalePath,
+      serverJarPath: customServerJarPath,
+      patchline,
+      issues: [],
+    }
+  }
+
+  // Fall back to default location
+  const defaultServerJarPath = getDefaultServerJarPath(hytalePath, patchline)
+
+  if (!(await pathExists(hytalePath))) {
+    return {
+      status: 'missing',
+      hytalePath: null,
+      serverJarPath: null,
+      patchline,
+      issues: ['Hytale is not installed. The HytaleServer.jar is required to compile plugins.'],
+    }
+  }
+
+  if (!(await pathExists(defaultServerJarPath))) {
+    return {
+      status: 'missing',
+      hytalePath,
+      serverJarPath: null,
+      patchline,
+      issues: [
+        `HytaleServer.jar not found at expected location.`,
+        `Expected: ${defaultServerJarPath}`,
+        `You can manually select the HytaleServer.jar location below.`,
+      ],
+    }
+  }
+
+  return {
+    status: 'found',
+    hytalePath,
+    serverJarPath: defaultServerJarPath,
+    patchline,
+    issues: [],
+  }
+}
+
 interface BuildMetaFile {
   artifacts: BuildArtifact[]
 }
@@ -1779,13 +1873,32 @@ async function saveBuildMeta(projectDir: string, meta: BuildMetaFile): Promise<v
 async function addArtifactToMeta(projectDir: string, artifact: BuildArtifact): Promise<void> {
   const meta = await loadBuildMeta(projectDir)
 
-  // Remove any existing artifact with the same output path (rebuild same version)
-  meta.artifacts = meta.artifacts.filter(a => a.outputPath !== artifact.outputPath)
-
-  // Add new artifact
+  // Add new artifact (keep all previous builds)
   meta.artifacts.push(artifact)
 
   await saveBuildMeta(projectDir, meta)
+}
+
+// Generate a unique artifact filename, adding a build number if the same version exists
+async function getUniqueArtifactPath(
+  projectDir: string,
+  projectName: string,
+  version: string,
+  extension: 'jar' | 'zip'
+): Promise<{ artifactName: string; destPath: string }> {
+  const baseName = `${projectName}-${version}`
+  let artifactName = `${baseName}.${extension}`
+  let destPath = path.join(projectDir, artifactName)
+
+  // Check if file already exists, and if so add a build number
+  let buildNumber = 1
+  while (await pathExists(destPath)) {
+    buildNumber++
+    artifactName = `${baseName}-build${buildNumber}.${extension}`
+    destPath = path.join(projectDir, artifactName)
+  }
+
+  return { artifactName, destPath }
 }
 
 async function removeArtifactFromMeta(projectDir: string, artifactId: string): Promise<void> {
@@ -1861,12 +1974,11 @@ async function buildPlugin(options: BuildPluginOptions): Promise<BuildPluginResu
     }
   }
 
-  // Copy JAR to builds folder
+  // Copy JAR to builds folder with unique name
   const projectBuildsDir = path.join(getPluginBuildsRoot(), projectName)
-  const artifactName = `${projectName}-${version}.jar`
-  const destPath = path.join(projectBuildsDir, artifactName)
-
   await ensureDir(projectBuildsDir)
+
+  const { destPath } = await getUniqueArtifactPath(projectBuildsDir, projectName, version, 'jar')
   await fs.copyFile(sourcePath, destPath)
 
   const stats = await fs.stat(destPath)
@@ -1954,13 +2066,11 @@ async function buildPack(options: BuildPackOptions): Promise<BuildPackResult> {
   output += 'Adding files to archive...\n'
   await addDirectoryToZipFiltered(zip, options.projectPath, options.projectPath, excludes)
 
-  // Write ZIP to builds folder
+  // Write ZIP to builds folder with unique name
   const projectBuildsDir = path.join(getPackBuildsRoot(), projectName)
-  const artifactName = `${projectName}-${version}.zip`
-  const destPath = path.join(projectBuildsDir, artifactName)
-
   await ensureDir(projectBuildsDir)
 
+  const { destPath } = await getUniqueArtifactPath(projectBuildsDir, projectName, version, 'zip')
   output += `Writing ZIP to: ${destPath}\n`
   const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
   await fs.writeFile(destPath, buffer)
@@ -3343,6 +3453,8 @@ load_user_mods=false
     id 'idea'
 }
 
+import org.gradle.internal.os.OperatingSystem
+
 group = project.maven_group
 version = project.version
 
@@ -3357,17 +3469,36 @@ repositories {
 }
 
 // Locate Hytale installation
-def hytaleHome = project.hasProperty('hytale_home') && project.hytale_home?.trim()
-    ? file(project.hytale_home)
-    : file(System.getProperty('os.name').toLowerCase().contains('win')
-        ? System.getenv('LOCALAPPDATA') + '/Hytale'
-        : System.getProperty('os.name').toLowerCase().contains('mac')
-            ? System.getProperty('user.home') + '/Library/Application Support/Hytale'
-            : System.getProperty('user.home') + '/.local/share/Hytale')
+ext {
+    if (project.hasProperty('hytale_home') && project.hytale_home?.trim()) {
+        hytaleHome = project.hytale_home
+    } else {
+        def os = OperatingSystem.current()
+        if (os.isWindows()) {
+            hytaleHome = System.getProperty('user.home') + '/AppData/Roaming/Hytale'
+        } else if (os.isMacOsX()) {
+            hytaleHome = System.getProperty('user.home') + '/Library/Application Support/Hytale'
+        } else if (os.isLinux()) {
+            def flatpakPath = System.getProperty('user.home') + '/.var/app/com.hypixel.HytaleLauncher/data/Hytale'
+            if (file(flatpakPath).exists()) {
+                hytaleHome = flatpakPath
+            } else {
+                hytaleHome = System.getProperty('user.home') + '/.local/share/Hytale'
+            }
+        }
+    }
+}
+
+if (!project.hasProperty('hytaleHome') || !file(hytaleHome).exists()) {
+    throw new GradleException('Your Hytale install could not be detected automatically. Please set hytale_home in gradle.properties.')
+}
 
 def patchline = project.hasProperty('patchline') ? project.patchline : 'release'
-def hytaleInstall = file("\${hytaleHome}/install/\${patchline}")
-def hytaleServer = file("\${hytaleInstall}/server/HytaleServer.jar")
+def hytaleServer = file("\${hytaleHome}/install/\${patchline}/package/game/latest/Server/HytaleServer.jar")
+
+if (!hytaleServer.exists()) {
+    throw new GradleException("Could not find HytaleServer.jar at: \${hytaleServer}. Make sure Hytale is installed and run at least once.")
+}
 
 dependencies {
     compileOnly files(hytaleServer)
@@ -3392,6 +3523,7 @@ tasks.named('processResources') {
 
 // Build JAR
 tasks.named('jar') {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from('src/main/resources') {
         include '**/*'
     }
@@ -4785,6 +4917,29 @@ function registerIpcHandlers() {
     }
     const selectedPath = result.filePaths[0]
     await writeSetting(SETTINGS_KEYS.jdkPath, selectedPath)
+    return selectedPath
+  })
+  // HytaleServer.jar path settings handlers
+  ipcMain.handle('settings:getServerJarPath', async () => {
+    return readSetting(SETTINGS_KEYS.serverJarPath)
+  })
+  ipcMain.handle('settings:setServerJarPath', async (_event, serverJarPath: string | null) => {
+    await writeSetting(SETTINGS_KEYS.serverJarPath, serverJarPath)
+  })
+  ipcMain.handle('settings:selectServerJarPath', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: 'Select HytaleServer.jar',
+      filters: [
+        { name: 'JAR Files', extensions: ['jar'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+    const selectedPath = result.filePaths[0]
+    await writeSetting(SETTINGS_KEYS.serverJarPath, selectedPath)
     return selectedPath
   })
 
