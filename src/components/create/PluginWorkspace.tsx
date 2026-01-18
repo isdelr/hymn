@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ModEntry, JavaSourceFile, ServerAsset } from '@/shared/hymn-types'
+import type { ProjectEntry, JavaSourceFile, ServerAsset } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -7,7 +7,9 @@ import {
     Play,
     Code,
     Package,
-    FolderOpen
+    FolderOpen,
+    Download,
+    Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -23,13 +25,14 @@ import { TemplateGallery } from './TemplateGallery'
 import { AssetNameDialog } from './AssetNameDialog'
 
 interface PluginWorkspaceProps {
-    project: ModEntry
+    project: ProjectEntry
     onBack: () => void
+    onInstallChange?: () => void
 }
 
 type WorkspaceMode = 'source' | 'assets'
 
-export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
+export function PluginWorkspace({ project, onBack, onInstallChange }: PluginWorkspaceProps) {
     // Mode: source code vs assets (for plugins with includesAssetPack)
     const [mode, setMode] = useState<WorkspaceMode>('source')
 
@@ -57,6 +60,10 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
 
     // Building state
     const [isBuilding, setIsBuilding] = useState(false)
+
+    // Install state
+    const [isInstalled, setIsInstalled] = useState(project.isInstalled)
+    const [isInstalling, setIsInstalling] = useState(false)
 
     const loadSources = useCallback(async () => {
         setIsLoadingSources(true)
@@ -229,6 +236,40 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
         }
     }
 
+    const handleInstall = async () => {
+        setIsInstalling(true)
+        try {
+            await window.hymn.installProject({
+                projectPath: project.path,
+                projectType: 'plugin',
+            })
+            setIsInstalled(true)
+            toast.success('Plugin installed for testing')
+            onInstallChange?.()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to install plugin')
+        } finally {
+            setIsInstalling(false)
+        }
+    }
+
+    const handleUninstall = async () => {
+        if (!project.installedPath) return
+        setIsInstalling(true)
+        try {
+            await window.hymn.uninstallProject({
+                projectPath: project.installedPath,
+            })
+            setIsInstalled(false)
+            toast.success('Plugin uninstalled')
+            onInstallChange?.()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to uninstall plugin')
+        } finally {
+            setIsInstalling(false)
+        }
+    }
+
     const handleBuild = async () => {
         setIsBuilding(true)
         toast.info('Building plugin...')
@@ -326,6 +367,30 @@ export function PluginWorkspace({ project, onBack }: PluginWorkspaceProps) {
                         <FolderOpen className="h-3.5 w-3.5" />
                         Open Folder
                     </Button>
+                    {/* Install/Uninstall Toggle */}
+                    {isInstalled ? (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-destructive hover:text-destructive"
+                            onClick={handleUninstall}
+                            disabled={isInstalling}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {isInstalling ? 'Uninstalling...' : 'Uninstall'}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={handleInstall}
+                            disabled={isInstalling}
+                        >
+                            <Download className="h-3.5 w-3.5" />
+                            {isInstalling ? 'Installing...' : 'Install for Testing'}
+                        </Button>
+                    )}
                     <Button
                         variant="outline"
                         size="sm"

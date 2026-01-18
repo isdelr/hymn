@@ -22,7 +22,10 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:api.github.com)",
       "Bash(bun run tsc:*)",
-      "Bash(bun run test)"
+      "Bash(bun run test)",
+      "Bash(npm run test:*)",
+      "WebSearch",
+      "Bash(node_modules/.bin/tsc:*)"
     ]
   }
 }

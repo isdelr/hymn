@@ -88,37 +88,45 @@
 }
 
 .dark {
-  --background: oklch(0.12 0.01 260);
-  --foreground: oklch(0.95 0.01 260);
-  --card: oklch(0.16 0.01 260);
-  --card-foreground: oklch(0.95 0.01 260);
-  --popover: oklch(0.16 0.01 260);
-  --popover-foreground: oklch(0.95 0.01 260);
-  --primary: oklch(0.65 0.18 250);
+  /* Warm charcoal base palette */
+  --background: oklch(0.18 0.006 30);
+  --foreground: oklch(0.96 0.004 30);
+  --card: oklch(0.22 0.005 30);
+  --card-foreground: oklch(0.96 0.004 30);
+  --popover: oklch(0.22 0.005 30);
+  --popover-foreground: oklch(0.96 0.004 30);
+  /* Blue primary accent */
+  --primary: oklch(0.65 0.14 250);
   --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.95 0.01 260);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.02 260);
-  --accent: oklch(0.28 0.02 260);
-  --accent-foreground: oklch(0.95 0.01 260);
+  /* Blue secondary accent (lighter) */
+  --secondary: oklch(0.55 0.12 250);
+  --secondary-foreground: oklch(0.98 0 0);
+  /* Muted charcoal layers */
+  --muted: oklch(0.25 0.005 30);
+  --muted-foreground: oklch(0.65 0.01 30);
+  --accent: oklch(0.28 0.008 30);
+  --accent-foreground: oklch(0.96 0.004 30);
   --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.28 0.02 260);
-  --input: oklch(0.22 0.01 260);
-  --ring: oklch(0.65 0.18 250);
-  --chart-1: oklch(0.65 0.18 250);
-  --chart-2: oklch(0.7 0.15 170);
-  --chart-3: oklch(0.75 0.15 85);
+  /* Warm borders */
+  --border: oklch(0.30 0.008 30);
+  --input: oklch(0.25 0.005 30);
+  --ring: oklch(0.65 0.14 250);
+  /* Chart colors */
+  --chart-1: oklch(0.65 0.14 250);
+  --chart-2: oklch(0.75 0.14 75);
+  --chart-3: oklch(0.7 0.18 145);
   --chart-4: oklch(0.65 0.2 320);
   --chart-5: oklch(0.65 0.2 25);
-  --sidebar: oklch(0.14 0.01 260);
-  --sidebar-foreground: oklch(0.95 0.01 260);
-  --sidebar-primary: oklch(0.65 0.18 250);
+  /* Sidebar - slightly darker charcoal */
+  --sidebar: oklch(0.16 0.005 30);
+  --sidebar-foreground: oklch(0.96 0.004 30);
+  --sidebar-primary: oklch(0.65 0.14 250);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.95 0.01 260);
-  --sidebar-border: oklch(0.28 0.02 260);
-  --sidebar-ring: oklch(0.65 0.18 250);
+  --sidebar-accent: oklch(0.25 0.005 30);
+  --sidebar-accent-foreground: oklch(0.96 0.004 30);
+  --sidebar-border: oklch(0.30 0.008 30);
+  --sidebar-ring: oklch(0.65 0.14 250);
+  /* Status colors */
   --success: oklch(0.7 0.18 145);
   --success-foreground: oklch(0.98 0 0);
   --warning: oklch(0.8 0.15 85);
@@ -134,24 +142,24 @@
   }
 }
 
-/* Custom scrollbar for dark mode */
+/* Custom scrollbar for dark mode - warm charcoal */
 .dark ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: oklch(0.16 0.01 260);
+  background: oklch(0.20 0.005 30);
   border-radius: 4px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: oklch(0.35 0.02 260);
+  background: oklch(0.35 0.008 30);
   border-radius: 4px;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.45 0.02 260);
+  background: oklch(0.45 0.008 30);
 }
 
 /* Smooth transitions */
@@ -159,47 +167,88 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Glass effect for cards */
+/* Glass effect for cards - warm charcoal */
 .glass-card {
-  background: oklch(0.16 0.01 260 / 0.8);
+  background: oklch(0.22 0.005 30 / 0.8);
   backdrop-filter: blur(12px);
-  border: 1px solid oklch(0.28 0.02 260 / 0.5);
+  border: 1px solid oklch(0.30 0.008 30 / 0.5);
+  box-shadow: 0 4px 24px oklch(0 0 0 / 0.2);
 }
 
-/* Gradient text */
+/* Gradient text - blue/amber accent */
 .gradient-text {
-  background: linear-gradient(135deg, oklch(0.65 0.18 250), oklch(0.7 0.15 200));
+  background: linear-gradient(135deg, oklch(0.65 0.14 250), oklch(0.75 0.14 75));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Glow effect for primary elements */
+/* Glow effect for primary (blue) elements */
 .glow-primary {
-  box-shadow: 0 0 20px oklch(0.65 0.18 250 / 0.3);
+  box-shadow: 0 0 16px oklch(0.65 0.14 250 / 0.2);
 }
 
-/* Pulse animation for status indicators */
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+/* Blue glow */
+.glow-blue {
+  box-shadow: 0 0 16px oklch(0.65 0.14 250 / 0.2);
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+/* Amber glow */
+.glow-amber {
+  box-shadow: 0 0 16px oklch(0.75 0.14 75 / 0.2);
 }
 
-/* Drag and drop styles */
+/* Gradient border effect */
+.gradient-border {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, oklch(0.65 0.14 250 / 0.25), oklch(0.75 0.14 75 / 0.15));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Titlebar styles for frameless window */
+.titlebar {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Drag and drop styles - blue accent */
 .dragging {
   opacity: 0.5;
   transform: scale(1.02);
 }
 
 .drag-over {
-  background: oklch(0.65 0.18 250 / 0.1);
-  border-color: oklch(0.65 0.18 250);
+  background: oklch(0.65 0.14 250 / 0.1);
+  border-color: oklch(0.65 0.14 250);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

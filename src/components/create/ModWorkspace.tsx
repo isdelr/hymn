@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
-import { ModEntry, ServerAsset } from '@/shared/hymn-types'
+import type { ProjectEntry, ServerAsset } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import {
     ChevronLeft,
-    Play,
     LayoutGrid,
     Package,
     Box,
     Users,
     Music,
-    Monitor
+    Monitor,
+    Archive,
+    Download,
+    Trash2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -23,8 +25,9 @@ import { AssetNameDialog } from './AssetNameDialog'
 import { PluginWorkspace } from './PluginWorkspace'
 
 interface ModWorkspaceProps {
-    project: ModEntry
+    project: ProjectEntry
     onBack: () => void
+    onInstallChange?: () => void
 }
 
 const NAV_ITEMS = [
@@ -36,10 +39,10 @@ const NAV_ITEMS = [
     { id: 'ui', label: 'Interface', icon: Monitor },
 ]
 
-export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
+export function ModWorkspace({ project, onBack, onInstallChange }: ModWorkspaceProps) {
     // Plugin projects use a dedicated workspace with Java source editing
     if (project.type === 'plugin') {
-        return <PluginWorkspace project={project} onBack={onBack} />
+        return <PluginWorkspace project={project} onBack={onBack} onInstallChange={onInstallChange} />
     }
 
     // Navigation State
@@ -55,6 +58,11 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
     // Data
     const [assets, setAssets] = useState<ServerAsset[]>([])
     const [isLoading, setIsLoading] = useState(true)
+
+    // Install state
+    const [isInstalled, setIsInstalled] = useState(project.isInstalled)
+    const [isInstalling, setIsInstalling] = useState(false)
+    const [isPackaging, setIsPackaging] = useState(false)
 
     const loadAssets = async () => {
         setIsLoading(true)
@@ -131,6 +139,55 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
     const handleRenameRequest = (asset: ServerAsset) => {
         setAssetToRename(asset)
         setIsNameDialogOpen(true)
+    }
+
+    const handleInstall = async () => {
+        setIsInstalling(true)
+        try {
+            await window.hymn.installProject({
+                projectPath: project.path,
+                projectType: 'pack',
+            })
+            setIsInstalled(true)
+            toast.success('Project installed for testing')
+            onInstallChange?.()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to install project')
+        } finally {
+            setIsInstalling(false)
+        }
+    }
+
+    const handleUninstall = async () => {
+        if (!project.installedPath) return
+        setIsInstalling(true)
+        try {
+            await window.hymn.uninstallProject({
+                projectPath: project.installedPath,
+            })
+            setIsInstalled(false)
+            toast.success('Project uninstalled')
+            onInstallChange?.()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to uninstall project')
+        } finally {
+            setIsInstalling(false)
+        }
+    }
+
+    const handlePackage = async () => {
+        setIsPackaging(true)
+        try {
+            const result = await window.hymn.packageMod({ path: project.path })
+            toast.success(`Package created: ${result.outputPath}`)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to package mod'
+            if (!message.includes('cancelled')) {
+                toast.error(message)
+            }
+        } finally {
+            setIsPackaging(false)
+        }
     }
 
     const handleConfirmRename = async (newName: string) => {
@@ -210,22 +267,40 @@ export function ModWorkspace({ project, onBack }: ModWorkspaceProps) {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Install/Uninstall Toggle */}
+                    {isInstalled ? (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-destructive hover:text-destructive"
+                            onClick={handleUninstall}
+                            disabled={isInstalling}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {isInstalling ? 'Uninstalling...' : 'Uninstall'}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={handleInstall}
+                            disabled={isInstalling}
+                        >
+                            <Download className="h-3.5 w-3.5" />
+                            {isInstalling ? 'Installing...' : 'Install for Testing'}
+                        </Button>
+                    )}
+                    {/* Package Button (for asset packs) */}
                     <Button
                         variant="outline"
                         size="sm"
                         className="gap-2 font-semibold"
-                        onClick={async () => {
-                            toast.info('Building mod package...')
-                            try {
-                                await window.hymn.buildMod({ path: project.path })
-                                toast.success('Build complete!')
-                            } catch (err) {
-                                toast.error('Build failed. Check Gradle output.')
-                            }
-                        }}
+                        onClick={handlePackage}
+                        disabled={isPackaging}
                     >
-                        <Play className="h-3.5 w-3.5 fill-current" />
-                        Build
+                        <Archive className="h-3.5 w-3.5" />
+                        {isPackaging ? 'Packaging...' : 'Package'}
                     </Button>
                 </div>
             </header>

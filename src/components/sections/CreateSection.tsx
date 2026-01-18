@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   Package,
   Plus,
   Code,
   Layers,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppContext } from '@/context/AppContext'
-import { ModEntry } from '@/shared/hymn-types'
+import type { ProjectEntry } from '@/shared/hymn-types'
 import { ProjectCard } from '@/components/create/ProjectCard'
 import { ModWorkspace } from '@/components/create/ModWorkspace'
 import {
@@ -16,7 +17,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -28,12 +28,16 @@ import { Separator } from '@/components/ui/separator'
 type ProjectType = 'pack' | 'plugin'
 
 export function CreateSection() {
-  const { state, actions } = useAppContext()
-  const { installInfo, scanResult } = state
+  const { state } = useAppContext()
+  const { installInfo } = state
 
-  const [activeProject, setActiveProject] = useState<ModEntry | null>(null)
+  const [activeProject, setActiveProject] = useState<ProjectEntry | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [projectType, setProjectType] = useState<ProjectType>('pack')
+
+  // Projects list state
+  const [projects, setProjects] = useState<ProjectEntry[]>([])
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false)
 
   // Common Creation State
   const [packName, setPackName] = useState('')
@@ -52,13 +56,21 @@ export function CreateSection() {
   const [includesAssetPack, setIncludesAssetPack] = useState(true)
   const [patchline, setPatchline] = useState<'release' | 'pre-release'>('release')
 
-  const modEntries = useMemo(() => {
-    return [...(scanResult?.entries ?? [])].sort((a, b) => a.name.localeCompare(b.name))
-  }, [scanResult])
+  const loadProjects = useCallback(async () => {
+    setIsLoadingProjects(true)
+    try {
+      const result = await window.hymn.listProjects()
+      setProjects(result.projects.sort((a, b) => a.name.localeCompare(b.name)))
+    } catch (error) {
+      console.error('Failed to load projects:', error)
+    } finally {
+      setIsLoadingProjects(false)
+    }
+  }, [])
 
-  const directoryEntries = useMemo(() => {
-    return modEntries.filter((entry) => entry.format === 'directory')
-  }, [modEntries])
+  useEffect(() => {
+    loadProjects()
+  }, [loadProjects])
 
   const handleCreateProject = async () => {
     if (!packName.trim()) return
@@ -89,7 +101,7 @@ export function CreateSection() {
         })
       }
 
-      await actions.runScan()
+      await loadProjects()
       setIsCreateDialogOpen(false)
       // Reset form state
       resetForm()
@@ -132,27 +144,19 @@ export function CreateSection() {
     return (
       <ModWorkspace
         project={activeProject}
-        onBack={() => setActiveProject(null)}
+        onBack={() => {
+          setActiveProject(null)
+          loadProjects()
+        }}
+        onInstallChange={loadProjects}
       />
     )
   }
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight gradient-text">Mod Playground</h1>
-          <p className="text-muted-foreground">Build, edit, and experiment with your Hytale creations.</p>
-        </div>
-
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="glow-primary gap-2 h-11 px-6 font-bold">
-              <Plus className="h-5 w-5" />
-              New Project
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[540px] border-primary/20 bg-card">
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogContent className="sm:max-w-[540px] border-border/50 bg-card">
             <DialogHeader>
               <DialogTitle className="text-xl">Create New Project</DialogTitle>
               <DialogDescription>
@@ -349,12 +353,39 @@ export function CreateSection() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
 
       <div className="space-y-4">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">My Projects</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">My Projects</h2>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCreateDialogOpen(true)}
+              className="h-8 gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadProjects}
+              disabled={isLoadingProjects}
+              className="h-8 gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoadingProjects ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
 
-        {directoryEntries.length === 0 ? (
+        {isLoadingProjects && projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-3xl text-center px-6">
+            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
+          </div>
+        ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 bg-card/20 border border-dashed rounded-3xl text-center px-6">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
               <Package className="h-8 w-8 text-muted-foreground/50" />
@@ -369,7 +400,7 @@ export function CreateSection() {
           </div>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {directoryEntries.map((project) => (
+            {projects.map((project) => (
               <ProjectCard
                 key={project.id}
                 project={project}

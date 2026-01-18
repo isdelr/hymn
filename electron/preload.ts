@@ -1,5 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi } from '../src/shared/hymn-types'
+
+const windowApi: HymnWindowApi = {
+  minimize: () => ipcRenderer.invoke('window:minimize'),
+  maximize: () => ipcRenderer.invoke('window:maximize'),
+  close: () => ipcRenderer.invoke('window:close'),
+  isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized)
+    ipcRenderer.on('window:maximized-change', handler)
+    return () => {
+      ipcRenderer.removeListener('window:maximized-change', handler)
+    }
+  },
+}
 
 const api: HymnApi = {
   getInstallInfo: () => ipcRenderer.invoke('hymn:get-install-info'),
@@ -39,6 +53,15 @@ const api: HymnApi = {
   deleteBackup: (backupId: string) => ipcRenderer.invoke('hymn:delete-backup', backupId),
   exportModpack: (options) => ipcRenderer.invoke('hymn:export-modpack', options),
   importModpack: () => ipcRenderer.invoke('hymn:import-modpack'),
+  // World-based mod export/import
+  exportWorldMods: (options) => ipcRenderer.invoke('hymn:export-world-mods', options),
+  importWorldMods: () => ipcRenderer.invoke('hymn:import-world-mods'),
+  // Projects folder management
+  listProjects: () => ipcRenderer.invoke('hymn:list-projects'),
+  installProject: (options) => ipcRenderer.invoke('hymn:install-project', options),
+  uninstallProject: (options) => ipcRenderer.invoke('hymn:uninstall-project', options),
+  // Package mod (zip creation)
+  packageMod: (options) => ipcRenderer.invoke('hymn:package-mod', options),
   openInExplorer: (path: string) => ipcRenderer.invoke('hymn:open-in-explorer', path),
   listProjectFiles: (options) => ipcRenderer.invoke('hymn:list-project-files', options),
   readFile: (path: string) => ipcRenderer.invoke('hymn:read-file', path),
@@ -51,3 +74,4 @@ const api: HymnApi = {
 }
 
 contextBridge.exposeInMainWorld('hymn', api)
+contextBridge.exposeInMainWorld('hymnWindow', windowApi)

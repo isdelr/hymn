@@ -4,13 +4,11 @@ import {
   Archive,
   Check,
   Clock,
-  Download,
   ExternalLink,
   FolderOpen,
   HardDrive,
   RefreshCw,
   Trash2,
-  Upload,
   CheckCircle,
   XCircle,
 } from 'lucide-react'
@@ -31,7 +29,7 @@ import { cn } from '@/lib/utils'
 import type { BackupInfo } from '@/shared/hymn-types'
 
 export function SettingsSection() {
-  const { state, actions, activeProfile } = useAppContext()
+  const { state, actions } = useAppContext()
   const { installInfo, isScanning } = state
 
   const [backups, setBackups] = useState<BackupInfo[]>([])
@@ -39,10 +37,6 @@ export function SettingsSection() {
   const [backupError, setBackupError] = useState<string | null>(null)
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
-  const [importExportMessage, setImportExportMessage] = useState<string | null>(null)
-  const [importExportError, setImportExportError] = useState<string | null>(null)
   const [deleteBackupId, setDeleteBackupId] = useState<string | null>(null)
   const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null)
 
@@ -94,42 +88,6 @@ export function SettingsSection() {
     }
   }
 
-  const handleExportModpack = async () => {
-    if (!activeProfile) return
-    setIsExporting(true)
-    setImportExportMessage(null)
-    setImportExportError(null)
-    try {
-      const result = await window.hymn.exportModpack({ profileId: activeProfile.id })
-      setImportExportMessage(`Exported ${result.modCount} mods successfully.`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to export modpack.'
-      if (!message.includes('cancelled')) {
-        setImportExportError(message)
-      }
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
-  const handleImportModpack = async () => {
-    setIsImporting(true)
-    setImportExportMessage(null)
-    setImportExportError(null)
-    try {
-      const result = await window.hymn.importModpack()
-      setImportExportMessage(`Imported ${result.modCount} mods as new profile.`)
-      await actions.loadProfiles()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to import modpack.'
-      if (!message.includes('cancelled')) {
-        setImportExportError(message)
-      }
-    } finally {
-      setIsImporting(false)
-    }
-  }
-
   const formatDate = (isoString: string) => {
     try {
       const date = new Date(isoString)
@@ -146,13 +104,11 @@ export function SettingsSection() {
 
   return (
     <div className="space-y-6">
-      {/* Top Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Install Location Card */}
-        <Card className="overflow-hidden">
-          <CardHeader className="border-b border-border/50 bg-muted/30">
+      {/* Install Location Card */}
+      <Card className="overflow-hidden rounded-xl border-border/40 bg-card/80">
+          <CardHeader className="border-b border-border/30 bg-muted/20">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
                 <HardDrive className="h-5 w-5 text-primary" />
               </div>
               <div>
@@ -243,76 +199,12 @@ export function SettingsSection() {
           </CardContent>
         </Card>
 
-        {/* Import/Export Card */}
-        <Card className="overflow-hidden">
-          <CardHeader className="border-b border-border/50 bg-muted/30">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
-                <Archive className="h-5 w-5 text-violet-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Import / Export</CardTitle>
-                <CardDescription>Share modpacks with others</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-5 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Export your active profile to share with friends, or import a modpack file to create a new profile.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                onClick={handleExportModpack}
-                disabled={isExporting || isImporting || !activeProfile}
-                className="h-11 flex-col gap-1"
-              >
-                <Download className="h-4 w-4" />
-                <span className="text-xs">
-                  {isExporting ? 'Exporting...' : 'Export'}
-                </span>
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleImportModpack}
-                disabled={isExporting || isImporting}
-                className="h-11 flex-col gap-1"
-              >
-                <Upload className="h-4 w-4" />
-                <span className="text-xs">
-                  {isImporting ? 'Importing...' : 'Import'}
-                </span>
-              </Button>
-            </div>
-
-            {/* Status messages */}
-            {importExportError && (
-              <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertTriangle className="h-3 w-3" />
-                {importExportError}
-              </div>
-            )}
-            {importExportMessage && (
-              <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
-                <Check className="h-3 w-3" />
-                {importExportMessage}
-              </div>
-            )}
-
-            <p className="text-[10px] text-muted-foreground/70">
-              Modpacks are saved as .hymnpack files containing profile settings and mod references.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Backups Card */}
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/50 bg-muted/30">
+      <Card className="overflow-hidden rounded-xl border-border/40 bg-card/80">
+        <CardHeader className="border-b border-border/30 bg-muted/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
                 <Clock className="h-5 w-5 text-amber-400" />
               </div>
               <div>

@@ -231,6 +231,33 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       profileId: 'imported-profile',
       modCount: 2,
     }),
+    // World-based mod export/import
+    exportWorldMods: vi.fn().mockResolvedValue({
+      success: true,
+      outputPath: 'C:\\Downloads\\world_mods.hymnmods',
+      modCount: 2,
+    }),
+    importWorldMods: vi.fn().mockResolvedValue({
+      success: true,
+      modsImported: 2,
+      modsSkipped: 1,
+    }),
+    // Projects folder management
+    listProjects: vi.fn().mockResolvedValue({
+      projects: [],
+    }),
+    installProject: vi.fn().mockResolvedValue({
+      success: true,
+      installedPath: 'C:\\Hytale\\UserData\\Packs\\TestPack',
+    }),
+    uninstallProject: vi.fn().mockResolvedValue({
+      success: true,
+    }),
+    // Package mod (zip creation)
+    packageMod: vi.fn().mockResolvedValue({
+      success: true,
+      outputPath: 'C:\\Downloads\\TestPack.zip',
+    }),
     openInExplorer: vi.fn().mockResolvedValue(undefined),
     // World management methods
     getWorlds: vi.fn().mockResolvedValue({

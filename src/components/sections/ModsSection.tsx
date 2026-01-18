@@ -14,12 +14,13 @@ import {
   HardDrive,
   Link2,
   PackagePlus,
+  Download,
+  Upload,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -37,6 +38,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useAppContext } from '@/context/AppContext'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
 import { cn } from '@/lib/utils'
@@ -59,27 +65,31 @@ const getModColors = (type: ModEntry['type']) => {
   switch (type) {
     case 'pack':
       return {
-        badge: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-        icon: 'text-emerald-400',
-        glow: 'group-hover:shadow-emerald-500/10',
+        badge: 'bg-primary/15 text-primary border-primary/30',
+        icon: 'text-primary',
+        glow: 'group-hover:shadow-primary/10',
+        accent: 'from-primary',
       }
     case 'plugin':
       return {
-        badge: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-        icon: 'text-blue-400',
-        glow: 'group-hover:shadow-blue-500/10',
+        badge: 'bg-secondary/15 text-secondary border-secondary/30',
+        icon: 'text-secondary',
+        glow: 'group-hover:shadow-secondary/10',
+        accent: 'from-secondary',
       }
     case 'early-plugin':
       return {
         badge: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
         icon: 'text-amber-400',
         glow: 'group-hover:shadow-amber-500/10',
+        accent: 'from-amber-400',
       }
     default:
       return {
         badge: 'bg-muted text-muted-foreground',
         icon: 'text-muted-foreground',
         glow: '',
+        accent: 'from-muted-foreground',
       }
   }
 }
@@ -110,6 +120,8 @@ export function ModsSection() {
 
   const [filter, setFilter] = useState('')
   const [modToDelete, setModToDelete] = useState<ModEntry | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
   const visibleEntries = useMemo(() => {
     const entries = scanResult?.entries ?? []
@@ -128,13 +140,46 @@ export function ModsSection() {
     setModToDelete(null)
   }
 
+  const handleExportWorldMods = async () => {
+    if (!selectedWorld) return
+    setIsExporting(true)
+    try {
+      const result = await window.hymn.exportWorldMods({ worldId: selectedWorld.id })
+      // Toast or notification could be added here
+      console.log(`Exported ${result.modCount} mods to ${result.outputPath}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to export mods.'
+      if (!message.includes('cancelled')) {
+        console.error(message)
+      }
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleImportWorldMods = async () => {
+    setIsImporting(true)
+    try {
+      const result = await window.hymn.importWorldMods()
+      console.log(`Imported ${result.modsImported} mods, skipped ${result.modsSkipped}`)
+      await actions.runScan()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import mods.'
+      if (!message.includes('cancelled')) {
+        console.error(message)
+      }
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const worlds = worldsState?.worlds ?? []
   const hasWorlds = worlds.length > 0
 
   return (
     <div className="space-y-5">
       {/* World Selector */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 mb-10">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Globe className="h-4 w-4" />
           <span>Managing mods for:</span>
@@ -174,6 +219,28 @@ export function ModsSection() {
             No worlds found. Create a world in Hytale first.
           </div>
         )}
+
+        {/* Export/Import Buttons */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExportWorldMods}
+            disabled={isExporting || isImporting || !selectedWorld || isScanning}
+            className="h-8 w-8"
+          >
+            <Download className={cn("h-4 w-4", isExporting && "animate-pulse")} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleImportWorldMods}
+            disabled={isExporting || isImporting || isScanning || !installInfo?.activePath}
+            className="h-8 w-8"
+          >
+            <Upload className={cn("h-4 w-4", isImporting && "animate-pulse")} />
+          </Button>
+        </div>
       </div>
 
       {/* Error message */}
@@ -273,13 +340,12 @@ export function ModsSection() {
               <div
                 key={`${entry.location}-${entry.path}`}
                 className={cn(
-                  'group relative rounded-xl border bg-card transition-all duration-200',
-                  isEnabled
-                    ? 'border-primary/40 bg-primary/5 shadow-lg shadow-primary/5'
-                    : 'border-border/50 hover:border-border hover:shadow-md hover:shadow-black/10',
-                  colors.glow
+                  'group relative overflow-hidden rounded-xl border border-border/40 bg-card/80 transition-colors duration-200',
+                  'hover:border-primary/60 hover:bg-card',
+                  isEnabled && 'border-primary/50 bg-primary/5'
                 )}
               >
+
                 <div className="p-4">
                   {/* Header */}
                   <div className="flex items-start gap-3">

@@ -77,6 +77,20 @@ import type {
   JavaSourceFile,
   ListJavaSourcesOptions,
   ListJavaSourcesResult,
+  // World-based export/import types
+  ExportWorldModsOptions,
+  ExportWorldModsResult,
+  ImportWorldModsResult,
+  // Projects folder types
+  ProjectEntry,
+  ListProjectsResult,
+  InstallProjectOptions,
+  InstallProjectResult,
+  UninstallProjectOptions,
+  UninstallProjectResult,
+  // Package mod types
+  PackageModOptions,
+  PackageModResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -117,11 +131,24 @@ let profilesSeeded = false
 function createWindow() {
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    frame: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: false,
+    minWidth: 900,
+    minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  })
+
+  // Send maximize state changes to renderer
+  win.on('maximize', () => {
+    win?.webContents.send('window:maximized-change', true)
+  })
+  win.on('unmaximize', () => {
+    win?.webContents.send('window:maximized-change', false)
   })
 
   if (VITE_DEV_SERVER_URL) {
@@ -242,6 +269,10 @@ function getBackupsRoot() {
 
 function getDisabledRoot() {
   return path.join(app.getPath('userData'), DISABLED_FOLDER)
+}
+
+function getProjectsRoot() {
+  return path.join(app.getPath('userData'), 'projects')
 }
 
 function getDisabledLocationPath(location: ModLocation) {
@@ -2266,6 +2297,37 @@ function createModEntry(params: {
 
 // appendEntryWarnings removed - warnings no longer tracked
 
+// Helper to scan a single mod/project directory
+async function scanSingleMod(
+  fullPath: string,
+  format: ModFormat,
+  location: ModLocation,
+): Promise<ModEntry | null> {
+  if (!(await pathExists(fullPath))) {
+    return null
+  }
+
+  let manifest: Record<string, unknown> | null = null
+
+  try {
+    manifest = await readManifestFromFolder(fullPath)
+  } catch {
+    // Failed to read manifest.json
+  }
+
+  const size = await getPathSize(fullPath)
+  const fallbackName = path.basename(fullPath)
+
+  return createModEntry({
+    manifest,
+    fallbackName,
+    format,
+    location,
+    path: fullPath,
+    size,
+  })
+}
+
 async function scanPacksFolder(
   packsPath: string,
   enabledOverride?: boolean,
@@ -2643,22 +2705,15 @@ async function rollbackLastApply(): Promise<RollbackResult> {
 }
 
 async function createPack(options: CreatePackOptions): Promise<CreatePackResult> {
-  const info = await resolveInstallInfo()
-  if (!info.activePath) {
-    throw new Error('Hytale install path not configured.')
-  }
-
-
   const packName = options.name.trim() || 'NewPack'
   const safeName = packName.replace(/[^a-zA-Z0-9_-]/g, '_')
 
-  const targetRoot = options.location === 'packs'
-    ? info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
-    : info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+  // Create packs in projects folder
+  const projectsRoot = getProjectsRoot()
+  const packsProjectRoot = path.join(projectsRoot, 'packs')
+  await ensureDir(packsProjectRoot)
 
-  await ensureDir(targetRoot)
-
-  const packPath = path.join(targetRoot, safeName)
+  const packPath = path.join(packsProjectRoot, safeName)
   if (await pathExists(packPath)) {
     throw new Error(`A pack named "${safeName}" already exists.`)
   }
@@ -2721,11 +2776,6 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
 }
 
 async function createPlugin(options: CreatePluginOptions): Promise<CreatePluginResult> {
-  const info = await resolveInstallInfo()
-  if (!info.activePath) {
-    throw new Error('Hytale install path not configured.')
-  }
-
   const pluginName = options.name.trim() || 'NewPlugin'
   const safeName = pluginName.replace(/[^a-zA-Z0-9_-]/g, '')
   const group = options.group.trim() || 'com.example'
@@ -2734,11 +2784,12 @@ async function createPlugin(options: CreatePluginOptions): Promise<CreatePluginR
   const patchline = options.patchline ?? 'release'
   const includesAssetPack = options.includesAssetPack ?? true
 
-  // Plugin goes into Mods folder
-  const modsPath = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
-  await ensureDir(modsPath)
+  // Plugin goes into projects folder
+  const projectsRoot = getProjectsRoot()
+  const pluginsProjectRoot = path.join(projectsRoot, 'plugins')
+  await ensureDir(pluginsProjectRoot)
 
-  const pluginPath = path.join(modsPath, safeName)
+  const pluginPath = path.join(pluginsProjectRoot, safeName)
   if (await pathExists(pluginPath)) {
     throw new Error(`A plugin named "${safeName}" already exists.`)
   }
@@ -3708,6 +3759,364 @@ async function importModpack(): Promise<ImportModpackResult> {
   }
 }
 
+// World-based mod export/import
+async function exportWorldMods(options: ExportWorldModsOptions): Promise<ExportWorldModsResult> {
+  const { worldId } = options
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  // Get world config to find enabled mods
+  const worldConfig = await getWorldConfig(worldId)
+  if (!worldConfig) {
+    throw new Error('World not found.')
+  }
+
+  const enabledModIds = new Set<string>()
+  if (worldConfig.Mods) {
+    for (const [modId, config] of Object.entries(worldConfig.Mods)) {
+      if (config.Enabled) {
+        enabledModIds.add(modId)
+      }
+    }
+  }
+
+  // Scan mods to get the entries with paths
+  const scan = await scanMods()
+  const enabledMods = scan.entries.filter((entry) => enabledModIds.has(entry.id))
+
+  if (enabledMods.length === 0) {
+    throw new Error('No mods are enabled for this world.')
+  }
+
+  const zip = new JSZip()
+
+  // Create manifest with metadata
+  const manifest = {
+    worldId,
+    exportedAt: new Date().toISOString(),
+    mods: enabledMods.map((mod) => ({
+      id: mod.id,
+      name: mod.name,
+      version: mod.version,
+      type: mod.type,
+      format: mod.format,
+      location: mod.location,
+    })),
+  }
+  zip.file('worldmods.json', JSON.stringify(manifest, null, 2))
+
+  // Add actual mod files/folders to the zip
+  for (const mod of enabledMods) {
+    const modPath = mod.path
+    const modName = path.basename(modPath)
+    const modFolder = zip.folder(`mods/${mod.location}/${modName}`)
+
+    if (mod.format === 'directory') {
+      // Add directory contents recursively
+      await addDirectoryToZip(modFolder!, modPath)
+    } else {
+      // Add single file (zip or jar)
+      const content = await fs.readFile(modPath)
+      zip.file(`mods/${mod.location}/${modName}`, content)
+    }
+  }
+
+  // Show save dialog
+  const result = await dialog.showSaveDialog({
+    title: 'Export World Mods',
+    defaultPath: `${worldId}_mods.hymnmods`,
+    filters: [{ name: 'Hymn World Mods', extensions: ['hymnmods'] }],
+  })
+
+  if (result.canceled || !result.filePath) {
+    throw new Error('Export cancelled.')
+  }
+
+  const zipContent = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  await fs.writeFile(result.filePath, zipContent)
+
+  return {
+    success: true,
+    outputPath: result.filePath,
+    modCount: enabledMods.length,
+  }
+}
+
+async function addDirectoryToZip(zipFolder: JSZip, dirPath: string) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      const subfolder = zipFolder.folder(entry.name)
+      await addDirectoryToZip(subfolder!, fullPath)
+    } else {
+      const content = await fs.readFile(fullPath)
+      zipFolder.file(entry.name, content)
+    }
+  }
+}
+
+async function importWorldMods(): Promise<ImportWorldModsResult> {
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  // Show open dialog
+  const result = await dialog.showOpenDialog({
+    title: 'Import World Mods',
+    filters: [{ name: 'Hymn World Mods', extensions: ['hymnmods'] }],
+    properties: ['openFile'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    throw new Error('Import cancelled.')
+  }
+
+  const filePath = result.filePaths[0]
+  const data = await fs.readFile(filePath)
+  const zip = await JSZip.loadAsync(data)
+
+  // Read manifest
+  const manifestFile = zip.file('worldmods.json')
+  if (!manifestFile) {
+    throw new Error('Invalid world mods file: missing worldmods.json')
+  }
+
+  const manifestContent = await manifestFile.async('string')
+  const manifest = JSON.parse(manifestContent) as {
+    worldId: string
+    mods: Array<{ id: string; name: string; type: string; format: string; location: string }>
+  }
+
+  let modsImported = 0
+  let modsSkipped = 0
+
+  // Extract mods to appropriate locations
+  const modsFolder = zip.folder('mods')
+  if (modsFolder) {
+    for (const modInfo of manifest.mods) {
+      const location = modInfo.location as ModLocation
+      let targetRoot: string | null = null
+
+      if (location === 'mods') {
+        targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+      } else if (location === 'packs') {
+        targetRoot = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
+      } else if (location === 'earlyplugins') {
+        targetRoot = info.earlyPluginsPath ?? path.join(info.activePath, 'UserData', 'EarlyPlugins')
+      }
+
+      if (!targetRoot) continue
+      await ensureDir(targetRoot)
+
+      // Find the mod files in the zip
+      const modPrefix = `mods/${location}/`
+      const modFiles = Object.keys(zip.files).filter((f) => f.startsWith(modPrefix) && f !== modPrefix)
+
+      if (modFiles.length === 0) continue
+
+      // Determine mod name from first file
+      const firstFile = modFiles[0]
+      const relativePath = firstFile.substring(modPrefix.length)
+      const modName = relativePath.split('/')[0]
+      const targetPath = path.join(targetRoot, modName)
+
+      // Skip if already exists
+      if (await pathExists(targetPath)) {
+        modsSkipped++
+        continue
+      }
+
+      // Extract mod
+      for (const zipPath of modFiles) {
+        const zipEntry = zip.files[zipPath]
+        if (zipEntry.dir) continue
+
+        const relPath = zipPath.substring(modPrefix.length)
+        const destPath = path.join(targetRoot, relPath)
+
+        await ensureDir(path.dirname(destPath))
+        const content = await zipEntry.async('nodebuffer')
+        await fs.writeFile(destPath, content)
+      }
+
+      modsImported++
+    }
+  }
+
+  return {
+    success: true,
+    modsImported,
+    modsSkipped,
+  }
+}
+
+// Projects folder management
+async function listProjects(): Promise<ListProjectsResult> {
+  const info = await resolveInstallInfo()
+  const projectsRoot = getProjectsRoot()
+  const projects: ProjectEntry[] = []
+
+  // Check installed paths
+  const installedPaths = new Set<string>()
+  if (info.activePath) {
+    const modsPath = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+    const packsPath = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
+
+    if (await pathExists(modsPath)) {
+      const modsEntries = await fs.readdir(modsPath, { withFileTypes: true })
+      for (const entry of modsEntries) {
+        if (entry.isDirectory()) {
+          installedPaths.add(entry.name)
+        }
+      }
+    }
+    if (await pathExists(packsPath)) {
+      const packsEntries = await fs.readdir(packsPath, { withFileTypes: true })
+      for (const entry of packsEntries) {
+        if (entry.isDirectory()) {
+          installedPaths.add(entry.name)
+        }
+      }
+    }
+  }
+
+  // Scan packs projects
+  const packsProjectRoot = path.join(projectsRoot, 'packs')
+  if (await pathExists(packsProjectRoot)) {
+    const packEntries = await fs.readdir(packsProjectRoot, { withFileTypes: true })
+    for (const entry of packEntries) {
+      if (!entry.isDirectory()) continue
+      const projectPath = path.join(packsProjectRoot, entry.name)
+      const modEntry = await scanSingleMod(projectPath, 'directory', 'packs')
+      if (modEntry) {
+        const isInstalled = installedPaths.has(entry.name)
+        const installedPath = isInstalled && info.activePath
+          ? path.join(info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs'), entry.name)
+          : undefined
+        projects.push({
+          ...modEntry,
+          isInstalled,
+          installedPath,
+        })
+      }
+    }
+  }
+
+  // Scan plugins projects
+  const pluginsProjectRoot = path.join(projectsRoot, 'plugins')
+  if (await pathExists(pluginsProjectRoot)) {
+    const pluginEntries = await fs.readdir(pluginsProjectRoot, { withFileTypes: true })
+    for (const entry of pluginEntries) {
+      if (!entry.isDirectory()) continue
+      const projectPath = path.join(pluginsProjectRoot, entry.name)
+      const modEntry = await scanSingleMod(projectPath, 'directory', 'mods')
+      if (modEntry) {
+        const isInstalled = installedPaths.has(entry.name)
+        const installedPath = isInstalled && info.activePath
+          ? path.join(info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods'), entry.name)
+          : undefined
+        projects.push({
+          ...modEntry,
+          isInstalled,
+          installedPath,
+        })
+      }
+    }
+  }
+
+  return { projects }
+}
+
+async function installProject(options: InstallProjectOptions): Promise<InstallProjectResult> {
+  const { projectPath, projectType } = options
+  const info = await resolveInstallInfo()
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  if (!(await pathExists(projectPath))) {
+    throw new Error('Project not found.')
+  }
+
+  const projectName = path.basename(projectPath)
+  let targetRoot: string
+
+  if (projectType === 'pack') {
+    targetRoot = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
+  } else {
+    targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+  }
+
+  await ensureDir(targetRoot)
+  const installedPath = path.join(targetRoot, projectName)
+
+  if (await pathExists(installedPath)) {
+    throw new Error(`A mod named "${projectName}" already exists at the installation location.`)
+  }
+
+  await copyPath(projectPath, installedPath)
+
+  return {
+    success: true,
+    installedPath,
+  }
+}
+
+async function uninstallProject(options: UninstallProjectOptions): Promise<UninstallProjectResult> {
+  const { projectPath } = options
+
+  if (!(await pathExists(projectPath))) {
+    // Already uninstalled
+    return { success: true }
+  }
+
+  await removePath(projectPath)
+
+  return { success: true }
+}
+
+// Package mod (create zip)
+async function packageMod(options: PackageModOptions): Promise<PackageModResult> {
+  const { path: modPath } = options
+
+  if (!(await pathExists(modPath))) {
+    throw new Error('Mod path not found.')
+  }
+
+  const modName = path.basename(modPath)
+  const zip = new JSZip()
+
+  // Add all mod contents to zip
+  await addDirectoryToZip(zip, modPath)
+
+  // Determine output path
+  let outputPath = options.outputPath
+  if (!outputPath) {
+    const result = await dialog.showSaveDialog({
+      title: 'Package Mod',
+      defaultPath: `${modName}.zip`,
+      filters: [{ name: 'Zip Archive', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      throw new Error('Packaging cancelled.')
+    }
+    outputPath = result.filePath
+  }
+
+  const zipContent = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  await fs.writeFile(outputPath, zipContent)
+
+  return {
+    success: true,
+    outputPath,
+  }
+}
+
 async function listProjectFiles(options: ListProjectFilesOptions): Promise<ListProjectFilesResult> {
   const rootPath = options.path
   if (!(await pathExists(rootPath))) {
@@ -3819,6 +4228,15 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:delete-backup', async (_event, backupId: string) => deleteBackup(backupId))
   ipcMain.handle('hymn:export-modpack', async (_event, options: ExportModpackOptions) => exportModpack(options))
   ipcMain.handle('hymn:import-modpack', async () => importModpack())
+  // World-based mod export/import
+  ipcMain.handle('hymn:export-world-mods', async (_event, options: ExportWorldModsOptions) => exportWorldMods(options))
+  ipcMain.handle('hymn:import-world-mods', async () => importWorldMods())
+  // Projects folder management
+  ipcMain.handle('hymn:list-projects', async () => listProjects())
+  ipcMain.handle('hymn:install-project', async (_event, options: InstallProjectOptions) => installProject(options))
+  ipcMain.handle('hymn:uninstall-project', async (_event, options: UninstallProjectOptions) => uninstallProject(options))
+  // Package mod (zip creation)
+  ipcMain.handle('hymn:package-mod', async (_event, options: PackageModOptions) => packageMod(options))
   ipcMain.handle('hymn:open-in-explorer', async (_event, targetPath: string) => {
     await shell.openPath(targetPath)
   })
@@ -3833,4 +4251,22 @@ function registerIpcHandlers() {
     'hymn:delete-java-class',
     async (_event, options: { projectPath: string; relativePath: string }) => deleteJavaClass(options),
   )
+
+  // Window control handlers for frameless window
+  ipcMain.handle('window:minimize', () => {
+    win?.minimize()
+  })
+  ipcMain.handle('window:maximize', () => {
+    if (win?.isMaximized()) {
+      win.unmaximize()
+    } else {
+      win?.maximize()
+    }
+  })
+  ipcMain.handle('window:close', () => {
+    win?.close()
+  })
+  ipcMain.handle('window:isMaximized', () => {
+    return win?.isMaximized() ?? false
+  })
 }

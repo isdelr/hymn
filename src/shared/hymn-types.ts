@@ -366,6 +366,62 @@ export interface ImportModpackResult {
   modCount: number
 }
 
+// World-based mod export/import types
+export interface ExportWorldModsOptions {
+  worldId: string
+}
+
+export interface ExportWorldModsResult {
+  success: boolean
+  outputPath: string
+  modCount: number
+}
+
+export interface ImportWorldModsResult {
+  success: boolean
+  modsImported: number
+  modsSkipped: number
+}
+
+// Projects folder types
+export interface ProjectEntry extends ModEntry {
+  isInstalled: boolean
+  installedPath?: string
+}
+
+export interface ListProjectsResult {
+  projects: ProjectEntry[]
+}
+
+export interface InstallProjectOptions {
+  projectPath: string
+  projectType: 'pack' | 'plugin'
+}
+
+export interface InstallProjectResult {
+  success: boolean
+  installedPath: string
+}
+
+export interface UninstallProjectOptions {
+  projectPath: string
+}
+
+export interface UninstallProjectResult {
+  success: boolean
+}
+
+// Package mod (zip) types
+export interface PackageModOptions {
+  path: string
+  outputPath?: string
+}
+
+export interface PackageModResult {
+  success: boolean
+  outputPath: string
+}
+
 // World-based mod management types
 export interface WorldInfo {
   id: string // Folder name (unique identifier)
@@ -456,6 +512,15 @@ export interface HymnApi {
   deleteBackup: (backupId: string) => Promise<{ success: boolean }>
   exportModpack: (options: ExportModpackOptions) => Promise<ExportModpackResult>
   importModpack: () => Promise<ImportModpackResult>
+  // World-based mod export/import
+  exportWorldMods: (options: ExportWorldModsOptions) => Promise<ExportWorldModsResult>
+  importWorldMods: () => Promise<ImportWorldModsResult>
+  // Projects folder management
+  listProjects: () => Promise<ListProjectsResult>
+  installProject: (options: InstallProjectOptions) => Promise<InstallProjectResult>
+  uninstallProject: (options: UninstallProjectOptions) => Promise<UninstallProjectResult>
+  // Package mod (zip creation)
+  packageMod: (options: PackageModOptions) => Promise<PackageModResult>
   openInExplorer: (path: string) => Promise<void>
   listProjectFiles: (options: ListProjectFilesOptions) => Promise<ListProjectFilesResult>
   readFile: (path: string) => Promise<string>
@@ -465,4 +530,21 @@ export interface HymnApi {
   listJavaSources: (options: ListJavaSourcesOptions) => Promise<ListJavaSourcesResult>
   createJavaClass: (options: CreateJavaClassOptions) => Promise<CreateJavaClassResult>
   deleteJavaClass: (options: { projectPath: string; relativePath: string }) => Promise<{ success: boolean }>
+}
+
+// Window control API for frameless window
+export interface HymnWindowApi {
+  minimize: () => Promise<void>
+  maximize: () => Promise<void>
+  close: () => Promise<void>
+  isMaximized: () => Promise<boolean>
+  onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+}
+
+// Global window augmentation
+declare global {
+  interface Window {
+    hymn: HymnApi
+    hymnWindow: HymnWindowApi
+  }
 }
