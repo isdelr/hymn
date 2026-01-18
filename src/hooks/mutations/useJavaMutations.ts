@@ -80,3 +80,94 @@ export function useSaveJavaFile() {
     },
   })
 }
+
+interface RenameJavaFileParams {
+  projectPath: string
+  file: JavaSourceFile
+  newClassName: string
+}
+
+export function useRenameJavaFile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ projectPath, file, newClassName }: RenameJavaFileParams) => {
+      const result = await window.hymn.renameJavaFile({
+        projectPath,
+        relativePath: file.relativePath,
+        newClassName,
+      })
+      return { result, projectPath }
+    },
+    onSuccess: ({ result, projectPath }) => {
+      if (result.success) {
+        toast.success('File renamed')
+        queryClient.invalidateQueries({ queryKey: queryKeys.javaSources.all(projectPath) })
+      }
+      return result
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to rename file')
+    },
+  })
+}
+
+interface DeleteJavaPackageParams {
+  projectPath: string
+  packagePath: string
+}
+
+export function useDeleteJavaPackage() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ projectPath, packagePath }: DeleteJavaPackageParams) => {
+      const result = await window.hymn.deleteJavaPackage({
+        projectPath,
+        packagePath,
+      })
+      return { result, projectPath }
+    },
+    onSuccess: ({ result, projectPath }) => {
+      if (result.success) {
+        toast.success(`Package deleted (${result.deletedFiles} files)`)
+        queryClient.invalidateQueries({ queryKey: queryKeys.javaSources.all(projectPath) })
+      }
+      return result
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete package')
+    },
+  })
+}
+
+interface RenameJavaPackageParams {
+  projectPath: string
+  oldPackagePath: string
+  newPackageName: string
+}
+
+export function useRenameJavaPackage() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ projectPath, oldPackagePath, newPackageName }: RenameJavaPackageParams) => {
+      const result = await window.hymn.renameJavaPackage({
+        projectPath,
+        oldPackagePath,
+        newPackageName,
+      })
+      return { result, projectPath }
+    },
+    onSuccess: ({ result, projectPath }) => {
+      if (result.success) {
+        toast.success(`Package renamed (${result.renamedFiles} files updated)`)
+        queryClient.invalidateQueries({ queryKey: queryKeys.javaSources.all(projectPath) })
+      }
+      return result
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to rename package')
+    },
+  })
+}

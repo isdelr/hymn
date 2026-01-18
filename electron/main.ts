@@ -3971,29 +3971,31 @@ const JAVA_CLASS_TEMPLATE_BUILDERS: Record<JavaClassTemplate, JavaClassTemplateB
     const commandName = className.replace(/Command$/i, '').toLowerCase()
     return `package ${packageName};
 
-import com.hypixel.hytale.server.core.command.ArgumentReader;
-import com.hypixel.hytale.server.core.command.ChatContext;
-import com.hypixel.hytale.server.core.command.Command;
-import com.hypixel.hytale.server.core.command.CommandResult;
+import com.hypixel.hytale.server.core.command.AbstractPlayerCommand;
+import com.hypixel.hytale.server.core.command.CommandContext;
+import com.hypixel.hytale.server.core.ecs.Ref;
+import com.hypixel.hytale.server.core.ecs.store.EntityStore;
+import com.hypixel.hytale.server.core.ecs.store.Store;
+import com.hypixel.hytale.server.core.messaging.Message;
+import com.hypixel.hytale.server.core.world.World;
+import com.hypixel.hytale.server.entities.Player;
+import com.hypixel.hytale.server.entities.PlayerRef;
 
 import javax.annotation.Nonnull;
 
 /**
  * A chat command handler for "/${commandName}".
  */
-public class ${className} implements Command {
+public class ${className} extends AbstractPlayerCommand {
 
-    @Nonnull
-    @Override
-    public String getName() {
-        return "${commandName}";
+    public ${className}() {
+        super("${commandName}", "Description for ${commandName} command");
     }
 
-    @Nonnull
     @Override
-    public CommandResult execute(@Nonnull ChatContext context, @Nonnull ArgumentReader args) {
-        context.sendMessage("Hello from ${className}!");
-        return CommandResult.success();
+    protected void execute(@Nonnull CommandContext commandContext, @Nonnull Store<EntityStore> store, @Nonnull Ref<EntityStore> ref, @Nonnull PlayerRef playerRef, @Nonnull World world) {
+        Player player = store.getComponent(ref, Player.getComponentType());
+        player.sendMessage(Message.raw("Hello from ${className}!"));
     }
 }
 `
@@ -4203,6 +4205,171 @@ async function deleteJavaClass(options: { projectPath: string; relativePath: str
 
   await fs.unlink(filePath)
   return { success: true }
+}
+
+async function renameJavaFile(options: {
+  projectPath: string
+  relativePath: string
+  newClassName: string
+}): Promise<{ success: boolean; newRelativePath: string }> {
+  const sourceRoot = path.join(options.projectPath, 'src', 'main', 'java')
+  const filePath = path.join(sourceRoot, options.relativePath)
+
+  // Security check: ensure the path is within the source root
+  if (!isWithinPath(filePath, sourceRoot)) {
+    throw new Error('Invalid file path')
+  }
+
+  if (!(await pathExists(filePath))) {
+    throw new Error('File not found')
+  }
+
+  // Validate new class name (must be a valid Java identifier)
+  if (!/^[A-Z][a-zA-Z0-9_]*$/.test(options.newClassName)) {
+    throw new Error('Invalid class name. Must start with uppercase letter and contain only alphanumeric characters.')
+  }
+
+  const dir = path.dirname(filePath)
+  const newFileName = `${options.newClassName}.java`
+  const newFilePath = path.join(dir, newFileName)
+
+  // Check if new file already exists
+  if (await pathExists(newFilePath)) {
+    throw new Error('A file with that name already exists')
+  }
+
+  // Read the file content and update the class name
+  let content = await fs.readFile(filePath, 'utf-8')
+
+  // Extract the old class name from the file name
+  const oldClassName = path.basename(options.relativePath, '.java')
+
+  // Replace class declaration (handles public class, class, public final class, etc.)
+  content = content.replace(
+    new RegExp(`(\\b(?:public\\s+)?(?:final\\s+)?(?:abstract\\s+)?class\\s+)${oldClassName}\\b`, 'g'),
+    `$1${options.newClassName}`,
+  )
+
+  // Replace constructor declarations
+  content = content.replace(new RegExp(`\\b${oldClassName}\\s*\\(`, 'g'), `${options.newClassName}(`)
+
+  // Write the updated content to the new file
+  await fs.writeFile(newFilePath, content, 'utf-8')
+
+  // Delete the old file
+  await fs.unlink(filePath)
+
+  const newRelativePath = path.join(path.dirname(options.relativePath), newFileName).replace(/\\/g, '/')
+
+  return { success: true, newRelativePath }
+}
+
+async function deleteJavaPackage(options: {
+  projectPath: string
+  packagePath: string
+}): Promise<{ success: boolean; deletedFiles: number }> {
+  const sourceRoot = path.join(options.projectPath, 'src', 'main', 'java')
+  const packageDir = path.join(sourceRoot, options.packagePath.replace(/\./g, path.sep))
+
+  // Security check: ensure the path is within the source root
+  if (!isWithinPath(packageDir, sourceRoot)) {
+    throw new Error('Invalid package path')
+  }
+
+  if (!(await pathExists(packageDir))) {
+    throw new Error('Package not found')
+  }
+
+  // Count files before deletion
+  const countFiles = async (dir: string): Promise<number> => {
+    let count = 0
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        count += await countFiles(path.join(dir, entry.name))
+      } else if (entry.name.endsWith('.java')) {
+        count++
+      }
+    }
+    return count
+  }
+
+  const deletedFiles = await countFiles(packageDir)
+
+  // Remove the directory recursively
+  await fs.rm(packageDir, { recursive: true, force: true })
+
+  return { success: true, deletedFiles }
+}
+
+async function renameJavaPackage(options: {
+  projectPath: string
+  oldPackagePath: string
+  newPackageName: string
+}): Promise<{ success: boolean; renamedFiles: number }> {
+  const sourceRoot = path.join(options.projectPath, 'src', 'main', 'java')
+  const oldPackageDir = path.join(sourceRoot, options.oldPackagePath.replace(/\./g, path.sep))
+
+  // Security check: ensure the path is within the source root
+  if (!isWithinPath(oldPackageDir, sourceRoot)) {
+    throw new Error('Invalid package path')
+  }
+
+  if (!(await pathExists(oldPackageDir))) {
+    throw new Error('Package not found')
+  }
+
+  // Validate new package name
+  if (!/^[a-z][a-z0-9_]*$/.test(options.newPackageName)) {
+    throw new Error('Invalid package name. Must start with lowercase letter and contain only lowercase letters, numbers, and underscores.')
+  }
+
+  // Compute the new package directory path
+  const parentDir = path.dirname(oldPackageDir)
+  const newPackageDir = path.join(parentDir, options.newPackageName)
+
+  // Check if new package already exists
+  if (await pathExists(newPackageDir)) {
+    throw new Error('A package with that name already exists')
+  }
+
+  // Get the old and new full package names
+  const relativeOldPath = path.relative(sourceRoot, oldPackageDir)
+  const relativeNewPath = path.relative(sourceRoot, newPackageDir)
+  const oldFullPackage = relativeOldPath.replace(/[\\/]/g, '.')
+  const newFullPackage = relativeNewPath.replace(/[\\/]/g, '.')
+
+  // Update package declarations in all Java files
+  const updatePackageInFiles = async (dir: string, oldPkg: string, newPkg: string): Promise<number> => {
+    let count = 0
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        count += await updatePackageInFiles(fullPath, oldPkg, newPkg)
+      } else if (entry.name.endsWith('.java')) {
+        let content = await fs.readFile(fullPath, 'utf-8')
+        // Update package declaration
+        const updatedContent = content.replace(
+          new RegExp(`^(\\s*package\\s+)${oldPkg.replace(/\./g, '\\.')}(\\s*;)`, 'm'),
+          `$1${newPkg}$2`,
+        )
+        if (updatedContent !== content) {
+          await fs.writeFile(fullPath, updatedContent, 'utf-8')
+          count++
+        }
+      }
+    }
+    return count
+  }
+
+  const renamedFiles = await updatePackageInFiles(oldPackageDir, oldFullPackage, newFullPackage)
+
+  // Rename the directory
+  await fs.rename(oldPackageDir, newPackageDir)
+
+  return { success: true, renamedFiles }
 }
 
 // ============================================================================
@@ -4820,6 +4987,20 @@ function registerIpcHandlers() {
   ipcMain.handle(
     'hymn:delete-java-class',
     async (_event, options: { projectPath: string; relativePath: string }) => deleteJavaClass(options),
+  )
+  ipcMain.handle(
+    'hymn:rename-java-file',
+    async (_event, options: { projectPath: string; relativePath: string; newClassName: string }) =>
+      renameJavaFile(options),
+  )
+  ipcMain.handle(
+    'hymn:delete-java-package',
+    async (_event, options: { projectPath: string; packagePath: string }) => deleteJavaPackage(options),
+  )
+  ipcMain.handle(
+    'hymn:rename-java-package',
+    async (_event, options: { projectPath: string; oldPackagePath: string; newPackageName: string }) =>
+      renameJavaPackage(options),
   )
   // Build workflow handlers
   ipcMain.handle('hymn:check-dependencies', async () => checkDependencies())

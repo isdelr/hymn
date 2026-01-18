@@ -10,7 +10,6 @@ import {
     Users,
     Music,
     Monitor,
-    ExternalLink,
     Play,
     Archive,
     Settings,
@@ -261,15 +260,6 @@ export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspace
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.hymn.openInEditor(project.path)}
-                        className="gap-2"
-                    >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Open in Editor
-                    </Button>
                     {/* Build Button (creates ZIP in builds folder) */}
                     <Button
                         variant="outline"

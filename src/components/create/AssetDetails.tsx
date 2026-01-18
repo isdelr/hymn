@@ -12,7 +12,8 @@ import {
     AlertCircle,
     Check,
     FileX,
-    Loader2
+    Loader2,
+    ExternalLink
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -163,6 +164,15 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.hymn.openInEditor(asset.absolutePath)}
+                        className="gap-2"
+                    >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open in Editor
+                    </Button>
                     {mode === 'code' && (
                         <Button variant="ghost" size="sm" onClick={handleFormat} className="gap-2">
                             <AlignLeft className="h-4 w-4" />

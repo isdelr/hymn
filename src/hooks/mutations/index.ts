@@ -6,7 +6,14 @@ export {
   useRenameAsset,
   useSaveAsset,
 } from './useAssetMutations'
-export { useCreateJavaClass, useDeleteJavaFile, useSaveJavaFile } from './useJavaMutations'
+export {
+  useCreateJavaClass,
+  useDeleteJavaFile,
+  useSaveJavaFile,
+  useRenameJavaFile,
+  useDeleteJavaPackage,
+  useRenameJavaPackage,
+} from './useJavaMutations'
 export {
   useCreatePack,
   useCreatePlugin,

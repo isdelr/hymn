@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import { JavaSourceFile } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
-import { Save, RefreshCw, FileCode, X } from 'lucide-react'
+import { Save, RefreshCw, FileCode, X, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMonacoTheme } from '@/hooks/useMonacoTheme'
 import { useDirtyFilesStore } from '@/stores'
@@ -158,6 +158,15 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.hymn.openInEditor(file.absolutePath)}
+                        className="gap-2"
+                    >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open in Editor
+                    </Button>
                     {isDirty && (
                         <Button
                             variant="ghost"

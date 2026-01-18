@@ -10,7 +10,8 @@ import {
     Plus,
     Trash2,
     MoreVertical,
-    RefreshCw
+    RefreshCw,
+    Pencil
 } from 'lucide-react'
 import {
     DropdownMenu,
@@ -34,6 +35,9 @@ interface SourceExplorerProps {
     onFileSelect: (file: JavaSourceFile) => void
     onAddClass: () => void
     onDeleteFile: (file: JavaSourceFile) => void
+    onRenameFile: (file: JavaSourceFile) => void
+    onDeletePackage: (packagePath: string) => void
+    onRenamePackage: (packagePath: string) => void
     onRefresh: () => void
     isLoading: boolean
 }
@@ -85,18 +89,26 @@ function buildPackageTree(sources: JavaSourceFile[], basePackage: string): Packa
 interface PackageTreeItemProps {
     node: PackageNode
     depth: number
+    basePackage: string
     selectedFile: JavaSourceFile | null
     onFileSelect: (file: JavaSourceFile) => void
     onDeleteFile: (file: JavaSourceFile) => void
+    onRenameFile: (file: JavaSourceFile) => void
+    onDeletePackage: (packagePath: string) => void
+    onRenamePackage: (packagePath: string) => void
     isRoot?: boolean
 }
 
 function PackageTreeItem({
     node,
     depth,
+    basePackage,
     selectedFile,
     onFileSelect,
     onDeleteFile,
+    onRenameFile,
+    onDeletePackage,
+    onRenamePackage,
     isRoot = false
 }: PackageTreeItemProps) {
     const [isExpanded, setIsExpanded] = useState(true)
@@ -110,34 +122,72 @@ function PackageTreeItem({
         a.className.localeCompare(b.className)
     )
 
+    // Get the relative package path from the base package
+    const getRelativePackagePath = () => {
+        if (node.fullName === basePackage) return ''
+        if (node.fullName.startsWith(basePackage + '.')) {
+            return node.fullName.slice(basePackage.length + 1)
+        }
+        return node.fullName
+    }
+
     return (
         <div>
             {/* Package folder */}
             {!isRoot && (
-                <button
-                    className={cn(
-                        "flex items-center gap-2 w-full px-2 py-1.5 hover:bg-muted/50 rounded text-sm",
-                        "text-muted-foreground"
-                    )}
-                    style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                    onClick={() => setIsExpanded(!isExpanded)}
-                >
-                    {hasContent ? (
-                        isExpanded ? (
-                            <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
+                <div className="group flex items-center">
+                    <button
+                        className={cn(
+                            "flex items-center gap-2 flex-1 px-2 py-1.5 hover:bg-muted/50 rounded text-sm",
+                            "text-muted-foreground"
+                        )}
+                        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+                        onClick={() => setIsExpanded(!isExpanded)}
+                    >
+                        {hasContent ? (
+                            isExpanded ? (
+                                <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
+                            ) : (
+                                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
+                            )
                         ) : (
-                            <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
-                        )
-                    ) : (
-                        <span className="w-3.5" />
-                    )}
-                    {isExpanded ? (
-                        <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
-                    ) : (
-                        <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{node.name}</span>
-                </button>
+                            <span className="w-3.5" />
+                        )}
+                        {isExpanded ? (
+                            <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                        ) : (
+                            <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{node.name}</span>
+                    </button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 mr-1"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                                onClick={() => onRenamePackage(getRelativePackagePath())}
+                            >
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => onDeletePackage(getRelativePackagePath())}
+                            >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             )}
 
             {/* Children */}
@@ -149,9 +199,13 @@ function PackageTreeItem({
                             key={child.fullName}
                             node={child}
                             depth={isRoot ? depth : depth + 1}
+                            basePackage={basePackage}
                             selectedFile={selectedFile}
                             onFileSelect={onFileSelect}
                             onDeleteFile={onDeleteFile}
+                            onRenameFile={onRenameFile}
+                            onDeletePackage={onDeletePackage}
+                            onRenamePackage={onRenamePackage}
                         />
                     ))}
 
@@ -184,6 +238,12 @@ function PackageTreeItem({
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     <DropdownMenuItem
+                                        onClick={() => onRenameFile(file)}
+                                    >
+                                        <Pencil className="h-4 w-4 mr-2" />
+                                        Rename
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
                                         className="text-destructive focus:text-destructive"
                                         onClick={() => onDeleteFile(file)}
                                     >
@@ -207,6 +267,9 @@ export function SourceExplorer({
     onFileSelect,
     onAddClass,
     onDeleteFile,
+    onRenameFile,
+    onDeletePackage,
+    onRenamePackage,
     onRefresh,
     isLoading
 }: SourceExplorerProps) {
@@ -270,9 +333,13 @@ export function SourceExplorer({
                     <PackageTreeItem
                         node={tree}
                         depth={0}
+                        basePackage={basePackage}
                         selectedFile={selectedFile}
                         onFileSelect={onFileSelect}
                         onDeleteFile={onDeleteFile}
+                        onRenameFile={onRenameFile}
+                        onDeletePackage={onDeletePackage}
+                        onRenamePackage={onRenamePackage}
                         isRoot
                     />
                 )}

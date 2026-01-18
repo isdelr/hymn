@@ -8,7 +8,6 @@ import {
     Play,
     Code,
     Package,
-    ExternalLink,
     AlertTriangle,
     Archive,
     Settings,
@@ -29,6 +28,7 @@ import { AssetNameDialog } from './AssetNameDialog'
 import { BuildOutputDialog } from './BuildOutputDialog'
 import { BuildsPanel } from './BuildsPanel'
 import { ProjectSettingsDialog } from './ProjectSettingsDialog'
+import { RenameDialog } from './RenameDialog'
 
 // React Query hooks
 import { useJavaSources, useAssets, useDependencies, useProjects } from '@/hooks/queries'
@@ -36,6 +36,9 @@ import {
     useCreateJavaClass,
     useDeleteJavaFile,
     useSaveJavaFile,
+    useRenameJavaFile,
+    useDeleteJavaPackage,
+    useRenameJavaPackage,
     useCreateAsset,
     useDeleteAsset,
     useRenameAsset,
@@ -71,6 +74,9 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
     const createJavaClass = useCreateJavaClass()
     const deleteJavaFile = useDeleteJavaFile()
     const saveJavaFile = useSaveJavaFile()
+    const renameJavaFile = useRenameJavaFile()
+    const deleteJavaPackage = useDeleteJavaPackage()
+    const renameJavaPackage = useRenameJavaPackage()
     const createAsset = useCreateAsset()
     const deleteAsset = useDeleteAsset()
     const renameAsset = useRenameAsset()
@@ -84,6 +90,10 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false)
     const [isClassNameDialogOpen, setIsClassNameDialogOpen] = useState(false)
     const [pendingTemplate, setPendingTemplate] = useState<JavaTemplate | null>(null)
+
+    // Java file/package rename dialogs
+    const [fileToRename, setFileToRename] = useState<JavaSourceFile | null>(null)
+    const [packageToRename, setPackageToRename] = useState<string | null>(null)
 
     // Assets state (for includesAssetPack)
     const [selectedAsset, setSelectedAsset] = useState<ServerAsset | null>(null)
@@ -155,6 +165,64 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
             filePath: selectedFile.absolutePath,
             content
         })
+    }
+
+    const handleRenameFile = (file: JavaSourceFile) => {
+        setFileToRename(file)
+    }
+
+    const handleConfirmRenameFile = async (newClassName: string) => {
+        if (!fileToRename) return
+
+        await renameJavaFile.mutateAsync({
+            projectPath: project.path,
+            file: fileToRename,
+            newClassName,
+        })
+
+        // Clear selection if renamed file was selected
+        if (selectedFile?.id === fileToRename.id) {
+            setSelectedFile(null)
+        }
+        setFileToRename(null)
+    }
+
+    const handleDeletePackage = async (packagePath: string) => {
+        const fileCount = sources.filter(s => {
+            const fullPackage = packagePath ? `${basePackage}.${packagePath}` : basePackage
+            return s.packageName === fullPackage || s.packageName.startsWith(fullPackage + '.')
+        }).length
+
+        if (!confirm(`Are you sure you want to delete this package? This will delete ${fileCount} file(s).`)) return
+
+        await deleteJavaPackage.mutateAsync({
+            projectPath: project.path,
+            packagePath,
+        })
+
+        // Clear selection if deleted package contained the selected file
+        if (selectedFile) {
+            const fullPackage = packagePath ? `${basePackage}.${packagePath}` : basePackage
+            if (selectedFile.packageName === fullPackage || selectedFile.packageName.startsWith(fullPackage + '.')) {
+                setSelectedFile(null)
+            }
+        }
+    }
+
+    const handleRenamePackage = (packagePath: string) => {
+        setPackageToRename(packagePath)
+    }
+
+    const handleConfirmRenamePackage = async (newPackageName: string) => {
+        if (packageToRename === null) return
+
+        await renameJavaPackage.mutateAsync({
+            projectPath: project.path,
+            oldPackagePath: packageToRename,
+            newPackageName,
+        })
+
+        setPackageToRename(null)
     }
 
     // Asset handlers (for includesAssetPack)
@@ -329,15 +397,6 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.hymn.openInEditor(project.path)}
-                        className="gap-2"
-                    >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Open in Editor
-                    </Button>
                     {canBuild ? (
                         <Button
                             variant="outline"
@@ -386,6 +445,9 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                                 onFileSelect={setSelectedFile}
                                 onAddClass={() => setIsTemplateGalleryOpen(true)}
                                 onDeleteFile={handleDeleteFile}
+                                onRenameFile={handleRenameFile}
+                                onDeletePackage={handleDeletePackage}
+                                onRenamePackage={handleRenamePackage}
                                 onRefresh={() => refetchSources()}
                                 isLoading={isLoadingSources}
                             />
@@ -505,6 +567,44 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                 onSaved={() => {
                     refetchProjects()
                     onProjectUpdated?.()
+                }}
+            />
+
+            {/* Rename Java File Dialog */}
+            <RenameDialog
+                isOpen={fileToRename !== null}
+                onClose={() => setFileToRename(null)}
+                onConfirm={handleConfirmRenameFile}
+                title="Rename Class"
+                description="Enter a new name for the Java class."
+                label="Class Name"
+                currentName={fileToRename?.className ?? ''}
+                placeholder="e.g., MyClass"
+                validateFn={(name) => {
+                    if (!name) return 'Class name is required'
+                    if (!/^[A-Z][a-zA-Z0-9_]*$/.test(name)) {
+                        return 'Class name must start with uppercase letter and contain only alphanumeric characters'
+                    }
+                    return null
+                }}
+            />
+
+            {/* Rename Java Package Dialog */}
+            <RenameDialog
+                isOpen={packageToRename !== null}
+                onClose={() => setPackageToRename(null)}
+                onConfirm={handleConfirmRenamePackage}
+                title="Rename Package"
+                description="Enter a new name for the package."
+                label="Package Name"
+                currentName={packageToRename?.split('.').pop() ?? ''}
+                placeholder="e.g., commands"
+                validateFn={(name) => {
+                    if (!name) return 'Package name is required'
+                    if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+                        return 'Package name must start with lowercase letter and contain only lowercase letters, numbers, and underscores'
+                    }
+                    return null
                 }}
             />
         </div>

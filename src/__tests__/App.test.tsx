@@ -299,6 +299,9 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       relativePath: 'com/example/TestClass.java',
     }),
     deleteJavaClass: vi.fn().mockResolvedValue({ success: true }),
+    renameJavaFile: vi.fn().mockResolvedValue({ success: true, newRelativePath: 'com/example/NewClass.java' }),
+    deleteJavaPackage: vi.fn().mockResolvedValue({ success: true, deletedFiles: 1 }),
+    renameJavaPackage: vi.fn().mockResolvedValue({ success: true, renamedFiles: 1 }),
     checkDependencies: vi.fn().mockResolvedValue({
       java: {
         status: 'found',

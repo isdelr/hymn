@@ -68,6 +68,9 @@ const api: HymnApi = {
   listJavaSources: (options) => ipcRenderer.invoke('hymn:list-java-sources', options),
   createJavaClass: (options) => ipcRenderer.invoke('hymn:create-java-class', options),
   deleteJavaClass: (options) => ipcRenderer.invoke('hymn:delete-java-class', options),
+  renameJavaFile: (options) => ipcRenderer.invoke('hymn:rename-java-file', options),
+  deleteJavaPackage: (options) => ipcRenderer.invoke('hymn:delete-java-package', options),
+  renameJavaPackage: (options) => ipcRenderer.invoke('hymn:rename-java-package', options),
   // Build workflow methods
   checkDependencies: () => ipcRenderer.invoke('hymn:check-dependencies'),
   buildPlugin: (options) => ipcRenderer.invoke('hymn:build-plugin', options),

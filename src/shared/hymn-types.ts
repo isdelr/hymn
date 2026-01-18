@@ -131,6 +131,38 @@ export interface ListJavaSourcesResult {
   sourceRoot: string
 }
 
+export interface RenameJavaFileOptions {
+  projectPath: string
+  relativePath: string
+  newClassName: string
+}
+
+export interface RenameJavaFileResult {
+  success: boolean
+  newRelativePath: string
+}
+
+export interface DeleteJavaPackageOptions {
+  projectPath: string
+  packagePath: string
+}
+
+export interface DeleteJavaPackageResult {
+  success: boolean
+  deletedFiles: number
+}
+
+export interface RenameJavaPackageOptions {
+  projectPath: string
+  oldPackagePath: string
+  newPackageName: string
+}
+
+export interface RenameJavaPackageResult {
+  success: boolean
+  renamedFiles: number
+}
+
 export interface CreateServerAssetOptions {
   path: string
   destination: string
@@ -607,6 +639,9 @@ export interface HymnApi {
   listJavaSources: (options: ListJavaSourcesOptions) => Promise<ListJavaSourcesResult>
   createJavaClass: (options: CreateJavaClassOptions) => Promise<CreateJavaClassResult>
   deleteJavaClass: (options: { projectPath: string; relativePath: string }) => Promise<{ success: boolean }>
+  renameJavaFile: (options: RenameJavaFileOptions) => Promise<RenameJavaFileResult>
+  deleteJavaPackage: (options: DeleteJavaPackageOptions) => Promise<DeleteJavaPackageResult>
+  renameJavaPackage: (options: RenameJavaPackageOptions) => Promise<RenameJavaPackageResult>
   // Build workflow methods
   checkDependencies: () => Promise<CheckDependenciesResult>
   buildPlugin: (options: BuildPluginOptions) => Promise<BuildPluginResult>
