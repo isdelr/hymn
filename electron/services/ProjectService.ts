@@ -160,7 +160,7 @@ export async function deleteProject(options: DeleteProjectOptions): Promise<Dele
  * Install a project to the mods folder.
  */
 export async function installProject(options: InstallProjectOptions): Promise<InstallProjectResult> {
-  const { projectPath, projectType: _projectType } = options
+  const { projectPath } = options
   const info = await resolveInstallInfo()
   if (!info.activePath) {
     throw new Error('Hytale install path not configured.')

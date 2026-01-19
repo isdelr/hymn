@@ -115,7 +115,7 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
             setOriginalData(data)
             clearDirtyFile(asset.absolutePath)
             toast.success(`${asset.kind} saved successfully`)
-        } catch (err) {
+        } catch {
             toast.error('Failed to save asset')
         }
     }

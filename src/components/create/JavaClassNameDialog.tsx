@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -32,14 +32,12 @@ export function JavaClassNameDialog({
     const [packagePath, setPackagePath] = useState(suggestedPackage)
     const [error, setError] = useState<string | null>(null)
 
-    // Reset when dialog opens
-    useEffect(() => {
-        if (isOpen) {
-            setClassName('')
-            setPackagePath(suggestedPackage)
-            setError(null)
-        }
-    }, [isOpen, suggestedPackage])
+    // Reset when dialog opens via event handler
+    const handleOpenAutoFocus = () => {
+        setClassName('')
+        setPackagePath(suggestedPackage)
+        setError(null)
+    }
 
     const validateClassName = (name: string): boolean => {
         if (!name) return false

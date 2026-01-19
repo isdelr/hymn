@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -37,12 +37,11 @@ export function RenameDialog({
     const [newName, setNewName] = useState(currentName)
     const [error, setError] = useState<string | null>(null)
 
-    useEffect(() => {
-        if (isOpen) {
-            setNewName(currentName)
-            setError(null)
-        }
-    }, [isOpen, currentName])
+    // Reset when dialog opens via event handler
+    const handleOpenAutoFocus = () => {
+        setNewName(currentName)
+        setError(null)
+    }
 
     const handleNameChange = (value: string) => {
         setNewName(value)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useMonaco } from '@monaco-editor/react'
 
 // Custom warm charcoal dark theme matching the app's dark mode

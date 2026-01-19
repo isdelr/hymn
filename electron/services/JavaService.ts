@@ -325,7 +325,7 @@ export async function renameJavaPackage(options: {
       if (entry.isDirectory()) {
         count += await updatePackageInFiles(fullPath, oldPkg, newPkg)
       } else if (entry.name.endsWith('.java')) {
-        let content = await fs.readFile(fullPath, 'utf-8')
+        const content = await fs.readFile(fullPath, 'utf-8')
         // Update package declaration
         const updatedContent = content.replace(
           new RegExp(`^(\\s*package\\s+)${oldPkg.replace(/\./g, '\\.')}(\\s*;)`, 'm'),

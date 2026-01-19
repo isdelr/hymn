@@ -36,12 +36,14 @@ export function useFileWatcher({
   const onAnyFileChangeRef = useRef(onAnyFileChange)
   const projectPathRef = useRef(projectPath)
 
-  // Keep refs in sync with props on every render
-  onJavaFileChangeRef.current = onJavaFileChange
-  onManifestChangeRef.current = onManifestChange
-  onAssetChangeRef.current = onAssetChange
-  onAnyFileChangeRef.current = onAnyFileChange
-  projectPathRef.current = projectPath
+  // Keep refs in sync with props after render
+  useEffect(() => {
+    onJavaFileChangeRef.current = onJavaFileChange
+    onManifestChangeRef.current = onManifestChange
+    onAssetChangeRef.current = onAssetChange
+    onAnyFileChangeRef.current = onAnyFileChange
+    projectPathRef.current = projectPath
+  })
 
   // Effect 1: Manage watcher lifecycle
   useEffect(() => {
