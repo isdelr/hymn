@@ -96,13 +96,6 @@ hymn/
 └── tests/
 ```
 
-## Tech Stack
-
-- **Framework:** Electron
-- **UI:** React, Tailwind CSS, shadcn/ui
-- **Build:** Vite, TypeScript
-- **State:** Zustand, TanStack Query
-- **Routing:** TanStack Router
 
 ## Contributing
 
@@ -114,10 +107,6 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## Security
-
-For security concerns, see [SECURITY.md](SECURITY.md). Please report vulnerabilities privately rather than opening public issues.
-
 ## License
 
 This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
@@ -126,4 +115,3 @@ This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) 
 
 - [Hytale](https://hytale.com) - The game this tool supports
 - [shadcn/ui](https://ui.shadcn.com) - UI components
-- [Mini Motorways](https://dinopoloclub.com/minimotorways/) - UI design inspiration
