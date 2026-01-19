@@ -2,13 +2,40 @@
   "name": "hymn",
   "private": true,
   "version": "0.0.0",
+  "description": "A modern mod manager and editor for Hytale",
+  "author": {
+    "name": "isa",
+    "url": "https://github.com/isdelr"
+  },
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isdelr/hymn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isdelr/hymn/issues"
+  },
+  "homepage": "https://github.com/isdelr/hymn#readme",
+  "keywords": [
+    "hytale",
+    "mod-manager",
+    "electron",
+    "react"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
+    "build:compile": "vite build",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0 --fix",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "postinstall": "electron-builder install-app-deps",
     "analyze": "npx vite-bundle-analyzer"

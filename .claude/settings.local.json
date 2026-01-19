@@ -50,7 +50,9 @@
       "Bash(bun --version:*)",
       "Bash(npm exec:*)",
       "WebFetch(domain:www.electronjs.org)",
-      "WebFetch(domain:britakee-studios.gitbook.io)"
+      "WebFetch(domain:britakee-studios.gitbook.io)",
+      "WebFetch(domain:dev.to)",
+      "Bash(curl:*)"
     ]
   }
 }
