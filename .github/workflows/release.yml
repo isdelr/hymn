@@ -49,7 +49,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERTS && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: bunx electron-builder --mac --publish never
 
       - name: Build Electron (Linux)

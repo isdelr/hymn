@@ -22,8 +22,9 @@
       }
     ],
     "artifactName": "${productName}-Mac-${version}-${arch}.${ext}",
+    "identity": null,
     "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
     "hardenedRuntime": true,
     "gatekeeperAssess": false
   },
@@ -34,7 +35,7 @@
         "arch": ["x64"]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+    "artifactName": "${productName}-Windows-${version}-${arch}-Setup.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -50,7 +51,7 @@
       "AppImage",
       "deb"
     ],
-    "artifactName": "${productName}-Linux-${version}.${ext}",
+    "artifactName": "${productName}-Linux-${version}-${arch}.${ext}",
     "category": "Game"
   }
 }
