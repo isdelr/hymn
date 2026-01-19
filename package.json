@@ -5,6 +5,7 @@
   "description": "A modern mod manager and editor for Hytale",
   "author": {
     "name": "isa",
+    "email": "isa@users.noreply.github.com",
     "url": "https://github.com/isdelr"
   },
   "license": "GPL-3.0",
