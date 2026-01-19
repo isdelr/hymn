@@ -37,12 +37,6 @@ export function RenameDialog({
     const [newName, setNewName] = useState(currentName)
     const [error, setError] = useState<string | null>(null)
 
-    // Reset when dialog opens via event handler
-    const handleOpenAutoFocus = () => {
-        setNewName(currentName)
-        setError(null)
-    }
-
     const handleNameChange = (value: string) => {
         setNewName(value)
         if (validateFn) {

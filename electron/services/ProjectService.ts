@@ -171,10 +171,9 @@ export async function installProject(options: InstallProjectOptions): Promise<In
   }
 
   const projectName = path.basename(projectPath)
-  let targetRoot: string
 
   // Both packs and plugins go to Mods folder
-  targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
+  const targetRoot: string = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
 
   await ensureDir(targetRoot)
   const installedPath = path.join(targetRoot, projectName)

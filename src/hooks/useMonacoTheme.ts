@@ -235,16 +235,16 @@ export function useMonacoTheme() {
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark')
   )
-  const [themesRegistered, setThemesRegistered] = useState(false)
+  const themesRegisteredRef = useRef(false)
 
   // Register custom themes when Monaco is ready
   useEffect(() => {
-    if (monaco && !themesRegistered) {
+    if (monaco && !themesRegisteredRef.current) {
       monaco.editor.defineTheme(HYMN_DARK_THEME, hymnDarkTheme)
       monaco.editor.defineTheme(HYMN_LIGHT_THEME, hymnLightTheme)
-      setThemesRegistered(true)
+      themesRegisteredRef.current = true
     }
-  }, [monaco, themesRegistered])
+  }, [monaco])
 
   // Watch for theme changes
   useEffect(() => {
@@ -267,6 +267,6 @@ export function useMonacoTheme() {
   return {
     theme: isDark ? HYMN_DARK_THEME : HYMN_LIGHT_THEME,
     isDark,
-    isReady: themesRegistered,
+    isReady: !!monaco,
   }
 }

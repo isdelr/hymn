@@ -32,13 +32,6 @@ export function JavaClassNameDialog({
     const [packagePath, setPackagePath] = useState(suggestedPackage)
     const [error, setError] = useState<string | null>(null)
 
-    // Reset when dialog opens via event handler
-    const handleOpenAutoFocus = () => {
-        setClassName('')
-        setPackagePath(suggestedPackage)
-        setError(null)
-    }
-
     const validateClassName = (name: string): boolean => {
         if (!name) return false
         // PascalCase: starts with uppercase, only alphanumeric

@@ -153,7 +153,7 @@ export function AssetDetails({ asset }: AssetDetailsProps) {
         try {
             const parsed = JSON.parse(value)
             setData(parsed)
-        } catch (e) {
+        } catch {
             // Allow invalid JSON while typing
         }
     }
@@ -1335,7 +1335,7 @@ function PathInput(props: PathInputProps) {
                 if (!exists) {
                     setTimeout(() => setShowError(true), 50)
                 }
-            } catch (err) {
+            } catch {
                 setIsValid(false)
                 setCheckedPath(null)
                 setTimeout(() => setShowError(true), 50)

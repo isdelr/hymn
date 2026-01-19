@@ -34,14 +34,7 @@ export function ProjectSettingsDialog({
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    // Load manifest when dialog opens
-    useEffect(() => {
-        if (isOpen && projectPath) {
-            loadManifest()
-        }
-    }, [isOpen, projectPath])
-
-    const loadManifest = async () => {
+    const loadManifest = useCallback(async () => {
         setIsLoading(true)
         setError(null)
         try {
@@ -60,7 +53,14 @@ export function ProjectSettingsDialog({
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [projectPath, projectFormat])
+
+    // Load manifest when dialog opens
+    useEffect(() => {
+        if (isOpen && projectPath) {
+            loadManifest()
+        }
+    }, [isOpen, projectPath, loadManifest])
 
     const handleUpdate = (updates: Partial<PackManifest>) => {
         if (!manifest) return
