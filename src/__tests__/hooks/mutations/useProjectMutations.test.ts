@@ -44,7 +44,8 @@ describe('useProjectMutations', () => {
           name: 'MyPack',
           description: 'Test pack',
           version: '1.0.0',
-          author: 'Test Author',
+          authorName: 'Test Author',
+          location: 'packs',
         })
       })
 
@@ -53,7 +54,8 @@ describe('useProjectMutations', () => {
           name: 'MyPack',
           description: 'Test pack',
           version: '1.0.0',
-          author: 'Test Author',
+          authorName: 'Test Author',
+          location: 'packs',
         })
       })
     })
@@ -75,7 +77,8 @@ describe('useProjectMutations', () => {
           name: 'MyPack',
           description: 'Test pack',
           version: '1.0.0',
-          author: 'Test Author',
+          authorName: 'Test Author',
+          location: 'packs',
         })
       })
 
@@ -98,7 +101,8 @@ describe('useProjectMutations', () => {
           name: 'MyPack',
           description: 'Test pack',
           version: '1.0.0',
-          author: 'Test Author',
+          authorName: 'Test Author',
+          location: 'packs',
         })
       })
 
@@ -128,8 +132,8 @@ describe('useProjectMutations', () => {
           name: 'MyPlugin',
           description: 'Test plugin',
           version: '1.0.0',
-          author: 'Test Author',
-          basePackage: 'com.example',
+          authorName: 'Test Author',
+          group: 'com.example',
         })
       })
 
@@ -138,8 +142,8 @@ describe('useProjectMutations', () => {
           name: 'MyPlugin',
           description: 'Test plugin',
           version: '1.0.0',
-          author: 'Test Author',
-          basePackage: 'com.example',
+          authorName: 'Test Author',
+          group: 'com.example',
         })
       })
     })
@@ -161,8 +165,8 @@ describe('useProjectMutations', () => {
           name: 'MyPlugin',
           description: 'Test plugin',
           version: '1.0.0',
-          author: 'Test Author',
-          basePackage: 'com.example',
+          authorName: 'Test Author',
+          group: 'com.example',
         })
       })
 
@@ -185,8 +189,8 @@ describe('useProjectMutations', () => {
           name: 'MyPlugin',
           description: 'Test plugin',
           version: '1.0.0',
-          author: 'Test Author',
-          basePackage: 'com.example',
+          authorName: 'Test Author',
+          group: 'com.example',
         })
       })
 

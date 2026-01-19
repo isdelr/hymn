@@ -115,15 +115,21 @@ export const createFixtures = (): Fixtures => {
 }
 
 export const createProjectEntry = (overrides: Partial<ProjectEntry> = {}): ProjectEntry => ({
+  id: 'project-1',
   name: 'TestProject',
   path: 'C:\\Hytale\\projects\\TestProject',
   type: 'pack',
-  hasManifest: true,
-  manifestPath: 'C:\\Hytale\\projects\\TestProject\\manifest.json',
+  format: 'directory',
+  location: 'packs',
   version: '1.0.0',
   description: 'Test project description',
+  enabled: true,
+  dependencies: [],
+  optionalDependencies: [],
+  entryPoint: null,
+  includesAssetPack: false,
   isInstalled: false,
-  installedPath: null,
+  installedPath: undefined,
   ...overrides,
 })
 
