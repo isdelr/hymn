@@ -12,7 +12,6 @@ A modern mod manager for Hytale built with Electron, React, and TypeScript.
 - **Safe Operations** - Automatic backups with one-click rollback
 - **Mod Creation Tools** - Visual editors and integrated IDE for building mods
 - **Cross-Platform** - Windows, macOS, and Linux support
-- **Dark Mode UI** - Inspired by Mini Motorways and Hytale
 
 ## Installation
 
