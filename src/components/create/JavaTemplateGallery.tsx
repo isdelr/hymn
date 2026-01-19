@@ -5,51 +5,28 @@ import {
     DialogTitle
 } from '@/components/ui/dialog'
 import {
-    Terminal,
-    Radio,
-    Puzzle,
-    FileCode
-} from 'lucide-react'
-import { JavaClassTemplate } from '@/shared/hymn-types'
+    JAVA_CLASS_TEMPLATES,
+    type JavaClassTemplateInfo,
+} from '@/shared/templates'
+import { getJavaClassIcon } from './templateIcons'
 
-export interface JavaTemplate {
-    id: JavaClassTemplate
-    label: string
-    description: string
+/**
+ * Template type for JavaTemplateGallery selections.
+ * Includes the icon component resolved from the template info.
+ */
+export interface JavaTemplate extends JavaClassTemplateInfo {
     icon: React.ComponentType<{ className?: string }>
-    suggestedPackage: string
 }
 
-const JAVA_TEMPLATES: JavaTemplate[] = [
-    {
-        id: 'command',
-        label: 'Command',
-        description: 'Chat command handler',
-        icon: Terminal,
-        suggestedPackage: 'commands'
-    },
-    {
-        id: 'event_listener',
-        label: 'Event Listener',
-        description: 'Game event hooks',
-        icon: Radio,
-        suggestedPackage: 'listeners'
-    },
-    {
-        id: 'component',
-        label: 'Component',
-        description: 'Entity component',
-        icon: Puzzle,
-        suggestedPackage: 'components'
-    },
-    {
-        id: 'custom_class',
-        label: 'Class',
-        description: 'Empty Java class',
-        icon: FileCode,
-        suggestedPackage: ''
-    },
-]
+/**
+ * Get all Java templates with resolved icons.
+ */
+function getJavaTemplates(): JavaTemplate[] {
+    return JAVA_CLASS_TEMPLATES.map(t => ({
+        ...t,
+        icon: getJavaClassIcon(t.iconName),
+    }))
+}
 
 interface JavaTemplateGalleryProps {
     isOpen: boolean
@@ -58,6 +35,8 @@ interface JavaTemplateGalleryProps {
 }
 
 export function JavaTemplateGallery({ isOpen, onClose, onSelect }: JavaTemplateGalleryProps) {
+    const templates = getJavaTemplates()
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="sm:max-w-[500px] border-border/80 bg-card p-0 overflow-hidden">
@@ -69,7 +48,7 @@ export function JavaTemplateGallery({ isOpen, onClose, onSelect }: JavaTemplateG
                 </div>
 
                 <div className="p-6 grid grid-cols-2 gap-4">
-                    {JAVA_TEMPLATES.map((tpl) => {
+                    {templates.map((tpl) => {
                         const Icon = tpl.icon
                         return (
                             <button

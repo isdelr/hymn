@@ -19,6 +19,7 @@ export const queryKeys = {
   projects: {
     all: ['projects'] as const,
     detail: (projectId: string) => ['projects', projectId] as const,
+    manifest: (projectPath: string) => ['projects', projectPath, 'manifest'] as const,
   },
 
   assets: {
