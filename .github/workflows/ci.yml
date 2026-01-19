@@ -44,7 +44,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }})
-    needs: lint-and-typecheck
+    needs: [lint-and-typecheck, test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
