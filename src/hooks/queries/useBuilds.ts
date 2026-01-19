@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from './queryKeys'
-import type { BuildArtifact, CheckDependenciesResult } from '@/shared/hymn-types'
+import type { BuildArtifact, CheckDependenciesResult, InstalledModFile } from '@/shared/hymn-types'
 
 export function useBuildArtifacts() {
   return useQuery<BuildArtifact[]>({
@@ -36,6 +36,16 @@ export function useServerJarPath() {
     queryKey: queryKeys.settings.serverJarPath,
     queryFn: async () => {
       return await window.hymnSettings.getServerJarPath()
+    },
+  })
+}
+
+export function useInstalledMods() {
+  return useQuery<InstalledModFile[]>({
+    queryKey: queryKeys.builds.installedMods,
+    queryFn: async () => {
+      const result = await window.hymn.listInstalledMods()
+      return result.mods
     },
   })
 }

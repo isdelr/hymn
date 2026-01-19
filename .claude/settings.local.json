@@ -36,7 +36,18 @@
       "WebFetch(domain:ui.shadcn.com)",
       "Bash(test:*)",
       "Bash(npm run lint)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(java -version:*)",
+      "Bash(where jar:*)",
+      "Bash(jar --version:*)",
+      "Bash(jar:*)",
+      "Bash(javap:*)",
+      "Bash(java:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run:*)",
+      "Bash(bun install:*)",
+      "Bash(bun run typecheck:*)",
+      "Bash(bun --version:*)"
     ]
   }
 }

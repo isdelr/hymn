@@ -11,6 +11,7 @@ import { pipeline } from 'node:stream/promises'
 import { createClient, type Client } from '@libsql/client'
 import JSZip from 'jszip'
 import * as yauzl from 'yauzl'
+import { watcherManager } from './fileWatchers'
 import type {
   ApplyResult,
   CreatePackOptions,
@@ -99,6 +100,9 @@ import type {
   DeleteBuildArtifactResult,
   ClearAllBuildArtifactsResult,
   CopyArtifactToModsResult,
+  InstalledModFile,
+  ListInstalledModsResult,
+  BuildArtifactType,
   CheckDependenciesResult,
   JavaDependencyInfo,
   HytaleDependencyInfo,
@@ -181,6 +185,7 @@ function createWindow() {
 }
 
 app.on('window-all-closed', () => {
+  watcherManager.stopAllWatchers()
   if (process.platform !== 'darwin') {
     app.quit()
     win = null
@@ -206,6 +211,13 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers()
   createWindow()
+
+  // Set up the watcher manager with the window reference
+  watcherManager.setWindow(win)
+
+  // Start projects and builds watchers eagerly
+  watcherManager.startProjectsWatcher()
+  watcherManager.startBuildsWatcher()
 })
 
 function getDefaultInstallPath() {
@@ -1993,6 +2005,8 @@ async function buildPlugin(options: BuildPluginOptions): Promise<BuildPluginResu
     durationMs,
     fileSize: stats.size,
     artifactType: 'jar',
+    output: buildResult.output,
+    outputTruncated: buildResult.truncated,
   }
 
   await addArtifactToMeta(projectBuildsDir, artifact)
@@ -2089,6 +2103,8 @@ async function buildPack(options: BuildPackOptions): Promise<BuildPackResult> {
     durationMs,
     fileSize: stats.size,
     artifactType: 'zip',
+    output,
+    outputTruncated: false,
   }
 
   await addArtifactToMeta(projectBuildsDir, artifact)
@@ -2268,6 +2284,72 @@ async function revealBuildArtifact(artifactId: string): Promise<void> {
   await shell.showItemInFolder(found.artifact.outputPath)
 }
 
+// Parse artifact filename to extract project name, version, and build number
+// Format: "ProjectName-Version-buildN.ext" or "ProjectName-Version.ext"
+function parseArtifactFilename(filename: string): {
+  projectName: string
+  version: string
+  buildNumber: number | null
+  artifactType: BuildArtifactType
+} | null {
+  // Match patterns like "MyMod-1.0.0-build2.jar" or "MyMod-1.0.0.jar"
+  const match = filename.match(/^(.+)-(\d+\.\d+\.\d+)(?:-build(\d+))?\.(jar|zip)$/i)
+  if (!match) return null
+
+  return {
+    projectName: match[1],
+    version: match[2],
+    buildNumber: match[3] ? parseInt(match[3], 10) : null,
+    artifactType: match[4].toLowerCase() as BuildArtifactType,
+  }
+}
+
+async function listInstalledMods(): Promise<ListInstalledModsResult> {
+  const installInfo = await resolveInstallInfo()
+  const mods: InstalledModFile[] = []
+
+  if (!installInfo.activePath) {
+    return { mods }
+  }
+
+  // Check both mods and packs folders
+  const foldersToCheck = [
+    { folder: installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods'), type: 'jar' as BuildArtifactType },
+    { folder: installInfo.packsPath || path.join(installInfo.activePath, 'user', 'Packs'), type: 'zip' as BuildArtifactType },
+  ]
+
+  for (const { folder, type } of foldersToCheck) {
+    if (!(await pathExists(folder))) continue
+
+    const entries = await fs.readdir(folder, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+
+      const ext = path.extname(entry.name).toLowerCase()
+      if ((type === 'jar' && ext !== '.jar') || (type === 'zip' && ext !== '.zip')) continue
+
+      const parsed = parseArtifactFilename(entry.name)
+      if (!parsed) continue
+
+      const filePath = path.join(folder, entry.name)
+      const stats = await fs.stat(filePath)
+
+      mods.push({
+        fileName: entry.name,
+        filePath,
+        projectName: parsed.projectName,
+        version: parsed.version,
+        buildNumber: parsed.buildNumber,
+        artifactType: parsed.artifactType,
+        installedAt: stats.mtime.toISOString(),
+        fileSize: stats.size,
+      })
+    }
+  }
+
+  return { mods }
+}
+
 async function copyArtifactToMods(artifactId: string): Promise<CopyArtifactToModsResult> {
   const found = await findArtifactById(artifactId)
 
@@ -2295,12 +2377,28 @@ async function copyArtifactToMods(artifactId: string): Promise<CopyArtifactToMod
 
   await ensureDir(destFolder)
 
+  // Check for existing builds of the same project and remove them
+  let replacedPath: string | undefined
+  const entries = await fs.readdir(destFolder, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+
+    const parsed = parseArtifactFilename(entry.name)
+    if (parsed && parsed.projectName === artifact.projectName) {
+      const existingPath = path.join(destFolder, entry.name)
+      await fs.unlink(existingPath)
+      replacedPath = existingPath
+      break // Only one build per project should exist
+    }
+  }
+
   const destPath = path.join(destFolder, path.basename(artifact.outputPath))
   await fs.copyFile(artifact.outputPath, destPath)
 
   return {
     success: true,
     destinationPath: destPath,
+    replacedPath,
   }
 }
 
@@ -3919,6 +4017,7 @@ zipStorePath=wrapper/dists
   const mainJavaClass = `package ${group};
 
 import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 
@@ -3945,7 +4044,7 @@ public class ${mainClassName} extends JavaPlugin {
         // this.getCommandRegistry().registerCommand(new MyCommand());
 
         // Register event listeners here:
-        // this.getEventRegistry().registerListener(new MyEventListener());
+        // this.getEventRegistry().register(PlayerConnectEvent.class, event -> { });
     }
 }
 `
@@ -3971,15 +4070,15 @@ const JAVA_CLASS_TEMPLATE_BUILDERS: Record<JavaClassTemplate, JavaClassTemplateB
     const commandName = className.replace(/Command$/i, '').toLowerCase()
     return `package ${packageName};
 
-import com.hypixel.hytale.server.core.command.AbstractPlayerCommand;
-import com.hypixel.hytale.server.core.command.CommandContext;
-import com.hypixel.hytale.server.core.ecs.Ref;
-import com.hypixel.hytale.server.core.ecs.store.EntityStore;
-import com.hypixel.hytale.server.core.ecs.store.Store;
-import com.hypixel.hytale.server.core.messaging.Message;
-import com.hypixel.hytale.server.core.world.World;
-import com.hypixel.hytale.server.entities.Player;
-import com.hypixel.hytale.server.entities.PlayerRef;
+import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
+import com.hypixel.hytale.server.core.command.system.CommandContext;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.server.core.Message;
+import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.universe.PlayerRef;
 
 import javax.annotation.Nonnull;
 
@@ -4004,19 +4103,19 @@ public class ${className} extends AbstractPlayerCommand {
   event_listener: (packageName, className) => {
     return `package ${packageName};
 
-import com.hypixel.hytale.server.core.event.EventListener;
-import com.hypixel.hytale.server.core.event.player.PlayerJoinEvent;
-
-import javax.annotation.Nonnull;
+import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
+import com.hypixel.hytale.server.core.universe.PlayerRef;
 
 /**
- * Listens for game events and handles them.
+ * Event handlers for ${className}.
+ * Register in your plugin's setup() method:
+ *   getEventRegistry().register(PlayerConnectEvent.class, ${className}::onPlayerConnect);
  */
-public class ${className} implements EventListener {
+public class ${className} {
 
-    @Override
-    public void onPlayerJoin(@Nonnull PlayerJoinEvent event) {
-        // Called when a player joins the server
+    public static void onPlayerConnect(PlayerConnectEvent event) {
+        PlayerRef playerRef = event.getPlayerRef();
+        // Handle player connection
     }
 }
 `
@@ -4972,6 +5071,9 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:delete-project', async (_event, options: DeleteProjectOptions) => deleteProject(options))
   ipcMain.handle('hymn:install-project', async (_event, options: InstallProjectOptions) => installProject(options))
   ipcMain.handle('hymn:uninstall-project', async (_event, options: UninstallProjectOptions) => uninstallProject(options))
+  // File watcher handlers
+  ipcMain.handle('hymn:watch-project', async (_event, projectPath: string) => watcherManager.startActiveProjectWatcher(projectPath))
+  ipcMain.handle('hymn:unwatch-project', async () => watcherManager.stopActiveProjectWatcher())
   // Package mod (zip creation)
   ipcMain.handle('hymn:package-mod', async (_event, options: PackageModOptions) => packageMod(options))
   ipcMain.handle('hymn:open-in-explorer', async (_event, targetPath: string) => {
@@ -5011,6 +5113,7 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:clear-all-build-artifacts', async () => clearAllBuildArtifacts())
   ipcMain.handle('hymn:reveal-build-artifact', async (_event, artifactId: string) => revealBuildArtifact(artifactId))
   ipcMain.handle('hymn:copy-artifact-to-mods', async (_event, artifactId: string) => copyArtifactToMods(artifactId))
+  ipcMain.handle('hymn:list-installed-mods', async () => listInstalledMods())
   ipcMain.handle('hymn:open-builds-folder', async () => {
     const buildsRoot = getBuildsRoot()
     await fs.mkdir(buildsRoot, { recursive: true })
@@ -5140,5 +5243,13 @@ function registerIpcHandlers() {
   })
   ipcMain.handle('window:isMaximized', () => {
     return win?.isMaximized() ?? false
+  })
+
+  // Directory watcher handlers
+  ipcMain.handle('hymn:start-mods-watcher', async (_event, modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) => {
+    watcherManager.startModsWatcher(modsPath, packsPath, earlyPluginsPath)
+  })
+  ipcMain.handle('hymn:stop-mods-watcher', async () => {
+    watcherManager.stopModsWatcher()
   })
 }

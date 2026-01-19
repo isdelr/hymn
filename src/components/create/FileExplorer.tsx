@@ -1,8 +1,9 @@
-import { FileJson, Folder, FolderOpen, MoreVertical, Plus, RefreshCw } from 'lucide-react'
-import { useEffect, useState, useCallback } from 'react'
+import { FileJson, Folder, FolderOpen, MoreVertical, Plus, Loader2 } from 'lucide-react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { FileNode } from '@/shared/hymn-types'
+import { useProjectFiles } from '@/hooks/queries'
 
 interface FileExplorerProps {
     rootPath: string
@@ -10,29 +11,13 @@ interface FileExplorerProps {
 }
 
 export function FileExplorer({ rootPath, onFileSelect }: FileExplorerProps) {
-    const [rootNode, setRootNode] = useState<FileNode | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
-
-    const loadFiles = useCallback(async () => {
-        setIsLoading(true)
-        try {
-            const result = await window.hymn.listProjectFiles({ path: rootPath, recursive: true })
-            setRootNode(result.root)
-        } catch (error) {
-            console.error('Failed to load project files:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [rootPath])
-
-    useEffect(() => {
-        loadFiles()
-    }, [loadFiles])
+    const { data, isLoading } = useProjectFiles(rootPath)
+    const rootNode = data?.root ?? null
 
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground opacity-50 text-xs">
-                <RefreshCw className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Loading files...
             </div>
         )
@@ -50,9 +35,6 @@ export function FileExplorer({ rootPath, onFileSelect }: FileExplorerProps) {
         <div className="flex flex-col h-full bg-card/10">
             <div className="p-2 flex items-center justify-between border-b bg-muted/20">
                 <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={loadFiles}>
-                        <RefreshCw className="h-3 w-3" />
-                    </Button>
                     <Button variant="ghost" size="icon" className="h-6 w-6">
                         <Plus className="h-3 w-3" />
                     </Button>

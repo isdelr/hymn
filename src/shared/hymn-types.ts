@@ -497,6 +497,8 @@ export interface BuildArtifact {
   durationMs: number
   fileSize: number
   artifactType: BuildArtifactType
+  output?: string // Build output/logs
+  outputTruncated?: boolean // Whether output was truncated
 }
 
 export interface BuildArtifactListResult {
@@ -519,6 +521,23 @@ export interface ClearAllBuildArtifactsResult {
 export interface CopyArtifactToModsResult {
   success: boolean
   destinationPath: string
+  replacedPath?: string // Path of previous build that was replaced (if any)
+}
+
+// Installed mod file info (for tracking what's in the mods folder)
+export interface InstalledModFile {
+  fileName: string
+  filePath: string
+  projectName: string // Extracted from filename (e.g., "MyMod" from "MyMod-1.0.0-build2.jar")
+  version: string // Extracted version
+  buildNumber: number | null // Extracted build number if present
+  artifactType: BuildArtifactType
+  installedAt: string // ISO date string
+  fileSize: number
+}
+
+export interface ListInstalledModsResult {
+  mods: InstalledModFile[]
 }
 
 // Java dependency detection types
@@ -651,6 +670,7 @@ export interface HymnApi {
   clearAllBuildArtifacts: () => Promise<ClearAllBuildArtifactsResult>
   revealBuildArtifact: (artifactId: string) => Promise<void>
   copyArtifactToMods: (artifactId: string) => Promise<CopyArtifactToModsResult>
+  listInstalledMods: () => Promise<ListInstalledModsResult>
   openBuildsFolder: () => Promise<void>
   // Open file/folder in default editor (uses OS "Open With" dialog)
   openInEditor: (path: string) => Promise<void>
@@ -694,6 +714,41 @@ export interface HymnSettingsApi {
   selectServerJarPath: () => Promise<string | null>
 }
 
+// File watcher types
+export type FileChangeType = 'java' | 'manifest' | 'asset' | 'other'
+
+export interface FileChangeEvent {
+  projectPath: string
+  filePath: string
+  relativePath: string
+  eventType: 'rename' | 'change'
+  changeType: FileChangeType
+}
+
+export interface WatchProjectResult {
+  success: boolean
+  error?: string
+}
+
+// Directory watcher types (for automatic refresh)
+export interface DirectoryChangeEvent {
+  directory: 'projects' | 'builds' | 'mods'
+  eventType: 'add' | 'change' | 'unlink'
+  path: string
+}
+
+export interface HymnFileWatcherApi {
+  watchProject: (projectPath: string) => Promise<WatchProjectResult>
+  unwatchProject: () => Promise<{ success: boolean }>
+  onFileChange: (callback: (event: FileChangeEvent) => void) => () => void
+  // Directory watcher methods
+  startModsWatcher: (modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) => Promise<void>
+  stopModsWatcher: () => Promise<void>
+  onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
+  onBuildsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
+  onModsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
+}
+
 // Global window augmentation
 declare global {
   interface Window {
@@ -701,5 +756,6 @@ declare global {
     hymnWindow: HymnWindowApi
     hymnTheme: HymnThemeApi
     hymnSettings: HymnSettingsApi
+    hymnFileWatcher: HymnFileWatcherApi
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from './queries/queryKeys'
 import type { FileChangeEvent } from '@/shared/hymn-types'
@@ -8,31 +8,68 @@ interface UseFileWatcherOptions {
   onJavaFileChange?: (event: FileChangeEvent) => void
   onManifestChange?: (event: FileChangeEvent) => void
   onAssetChange?: (event: FileChangeEvent) => void
+  /** Called for ANY file change in the project (regardless of type) */
+  onAnyFileChange?: (event: FileChangeEvent) => void
 }
 
 /**
  * Hook to watch a project directory for file changes.
  * Automatically invalidates React Query caches when files change.
+ *
+ * Uses two separate effects:
+ * 1. Watcher lifecycle (start/stop based on projectPath)
+ * 2. Event subscription (always active, filters by projectPath)
  */
 export function useFileWatcher({
   projectPath,
   onJavaFileChange,
   onManifestChange,
   onAssetChange,
+  onAnyFileChange,
 }: UseFileWatcherOptions) {
   const queryClient = useQueryClient()
-  const cleanupRef = useRef<(() => void) | null>(null)
 
-  const handleFileChange = useCallback(
-    (event: FileChangeEvent) => {
+  // Store callbacks in refs to avoid retriggering subscription effect
+  const onJavaFileChangeRef = useRef(onJavaFileChange)
+  const onManifestChangeRef = useRef(onManifestChange)
+  const onAssetChangeRef = useRef(onAssetChange)
+  const onAnyFileChangeRef = useRef(onAnyFileChange)
+  const projectPathRef = useRef(projectPath)
+
+  // Keep refs in sync with props on every render
+  onJavaFileChangeRef.current = onJavaFileChange
+  onManifestChangeRef.current = onManifestChange
+  onAssetChangeRef.current = onAssetChange
+  onAnyFileChangeRef.current = onAnyFileChange
+  projectPathRef.current = projectPath
+
+  // Effect 1: Manage watcher lifecycle
+  useEffect(() => {
+    if (!projectPath) return
+
+    window.hymnFileWatcher.watchProject(projectPath)
+
+    return () => {
+      window.hymnFileWatcher.unwatchProject()
+    }
+  }, [projectPath])
+
+  // Effect 2: Subscribe to file change events (separate from watcher lifecycle)
+  useEffect(() => {
+    const handleFileChange = (event: FileChangeEvent) => {
       // Only process events for the project we're watching
-      if (event.projectPath !== projectPath) return
+      if (event.projectPath !== projectPathRef.current) {
+        return
+      }
+
+      // Always call onAnyFileChange first
+      onAnyFileChangeRef.current?.(event)
 
       switch (event.changeType) {
         case 'java':
           // Invalidate Java sources query
           queryClient.invalidateQueries({
-            queryKey: queryKeys.javaSources.all(projectPath),
+            queryKey: queryKeys.javaSources.all(projectPathRef.current),
           })
           // Also invalidate the specific file content if it was being viewed
           queryClient.invalidateQueries({
@@ -40,9 +77,9 @@ export function useFileWatcher({
           })
           // Invalidate project files for file explorer
           queryClient.invalidateQueries({
-            queryKey: queryKeys.projectFiles.all(projectPath),
+            queryKey: queryKeys.projectFiles.all(projectPathRef.current),
           })
-          onJavaFileChange?.(event)
+          onJavaFileChangeRef.current?.(event)
           break
 
         case 'manifest':
@@ -50,55 +87,35 @@ export function useFileWatcher({
           queryClient.invalidateQueries({
             queryKey: queryKeys.projects.all,
           })
-          onManifestChange?.(event)
+          onManifestChangeRef.current?.(event)
           break
 
         case 'asset':
           // Invalidate assets query
           queryClient.invalidateQueries({
-            queryKey: queryKeys.assets.all(projectPath),
+            queryKey: queryKeys.assets.all(projectPathRef.current),
           })
           // Invalidate project files for file explorer
           queryClient.invalidateQueries({
-            queryKey: queryKeys.projectFiles.all(projectPath),
+            queryKey: queryKeys.projectFiles.all(projectPathRef.current),
           })
-          onAssetChange?.(event)
+          onAssetChangeRef.current?.(event)
           break
 
         default:
           // For other files, invalidate project files for file explorer
           queryClient.invalidateQueries({
-            queryKey: queryKeys.projectFiles.all(projectPath),
+            queryKey: queryKeys.projectFiles.all(projectPathRef.current),
           })
           break
       }
-    },
-    [projectPath, queryClient, onJavaFileChange, onManifestChange, onAssetChange]
-  )
-
-  useEffect(() => {
-    if (!projectPath) {
-      // No project to watch, clean up any existing watcher
-      if (cleanupRef.current) {
-        cleanupRef.current()
-        cleanupRef.current = null
-      }
-      window.hymnFileWatcher.unwatchProject()
-      return
     }
-
-    // Start watching the project
-    window.hymnFileWatcher.watchProject(projectPath)
 
     // Subscribe to file change events
     const unsubscribe = window.hymnFileWatcher.onFileChange(handleFileChange)
-    cleanupRef.current = unsubscribe
 
     return () => {
-      // Clean up on unmount or when projectPath changes
       unsubscribe()
-      cleanupRef.current = null
-      window.hymnFileWatcher.unwatchProject()
     }
-  }, [projectPath, handleFileChange])
+  }, [queryClient])
 }

@@ -5,7 +5,6 @@ import {
   Plus,
   Code,
   Layers,
-  RefreshCw,
   HelpCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -64,7 +63,7 @@ type ProjectType = 'pack' | 'plugin'
 function CreateIndexPage() {
   // React Query data
   const { data: installInfo } = useInstallInfo()
-  const { data: projects = [], isLoading: isLoadingProjects, refetch: loadProjects } = useProjects()
+  const { data: projects = [], isLoading: isLoadingProjects } = useProjects()
 
   // Mutations
   const createPack = useCreatePack()
@@ -130,12 +129,8 @@ function CreateIndexPage() {
         const createdProject = result.projects.find(p => p.path === createdPath)
         if (createdProject) {
           navigate({ to: '/create/$projectId', params: { projectId: createdProject.id } })
-          return
         }
       }
-
-      // Fallback: just reload the projects list
-      await loadProjects()
     } catch (error) {
       console.error(error)
     }
@@ -341,27 +336,15 @@ function CreateIndexPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">My Projects</h2>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsCreateDialogOpen(true)}
-              className="h-8 gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Project
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => loadProjects()}
-              disabled={isLoadingProjects}
-              className="h-8 gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoadingProjects ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCreateDialogOpen(true)}
+            className="h-8 gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            New Project
+          </Button>
         </div>
 
         {isLoadingProjects && projects.length === 0 ? (

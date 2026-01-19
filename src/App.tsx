@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { setupBeforeUnloadWarning } from '@/stores'
+import { FileWatcherProvider } from '@/providers/FileWatcherProvider'
 import { routeTree } from './routeTree.gen'
 
 // Create a new router instance
@@ -19,5 +20,9 @@ export function App() {
     return setupBeforeUnloadWarning()
   }, [])
 
-  return <RouterProvider router={router} />
+  return (
+    <FileWatcherProvider>
+      <RouterProvider router={router} />
+    </FileWatcherProvider>
+  )
 }

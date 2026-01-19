@@ -98,12 +98,19 @@ interface CopyArtifactToModsParams {
 }
 
 export function useCopyArtifactToMods() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: async ({ artifactId }: CopyArtifactToModsParams) => {
       return await window.hymn.copyArtifactToMods(artifactId)
     },
     onSuccess: (result) => {
-      toast.success(`Installed to ${result.destinationPath}`)
+      queryClient.invalidateQueries({ queryKey: queryKeys.builds.installedMods })
+      if (result.replacedPath) {
+        toast.success('Mod reinstalled successfully')
+      } else {
+        toast.success(`Installed to ${result.destinationPath}`)
+      }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to install artifact')

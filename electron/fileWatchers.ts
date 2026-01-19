@@ -49,10 +49,10 @@ export class WatcherManager {
   ): chokidar.FSWatcher {
     const watcher = chokidar.watch(paths, {
       ignoreInitial: true,
-      depth: 2, // Watch nested directories but not too deep
+      depth: 8,
       awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50,
+        stabilityThreshold: 1000,
+        pollInterval: 100
       },
     })
 
@@ -187,9 +187,10 @@ export class WatcherManager {
     try {
       const watcher = chokidar.watch(projectPath, {
         ignoreInitial: true,
+        depth: 8,
         awaitWriteFinish: {
-          stabilityThreshold: 100,
-          pollInterval: 50,
+          stabilityThreshold: 1000,
+          pollInterval: 100
         },
       })
 

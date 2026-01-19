@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { ProjectEntry, ServerAsset, ServerAssetTemplate, BuildPackResult } from '@/shared/hymn-types'
+import type { ProjectEntry, ServerAsset, ServerAssetTemplate, BuildPackResult, FileChangeEvent } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import {
     ChevronLeft,
@@ -31,6 +31,7 @@ import { ProjectSettingsDialog } from './ProjectSettingsDialog'
 
 // React Query hooks
 import { useAssets, useProjects } from '@/hooks/queries'
+import { useFileWatcher } from '@/hooks/useFileWatcher'
 import {
     useCreateAsset,
     useDeleteAsset,
@@ -85,6 +86,20 @@ export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspace
 
     // Project settings dialog state
     const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+
+    // File watcher - handles external file changes and auto-refreshes data
+    const handleAssetChange = useCallback((event: FileChangeEvent) => {
+        // Only clear selection if the asset was deleted or renamed, not on regular saves
+        if (selectedAsset && event.filePath === selectedAsset.absolutePath && event.eventType === 'rename') {
+            setSelectedAsset(null)
+        }
+    }, [selectedAsset])
+
+    // Only watch non-plugin projects (plugins are handled by PluginWorkspace)
+    useFileWatcher({
+        projectPath: project.type !== 'plugin' ? project.path : null,
+        onAssetChange: handleAssetChange,
+    })
 
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)

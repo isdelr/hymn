@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, ThemeMode, ModSortOrder } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent } from '../src/shared/hymn-types'
 
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -80,6 +80,7 @@ const api: HymnApi = {
   clearAllBuildArtifacts: () => ipcRenderer.invoke('hymn:clear-all-build-artifacts'),
   revealBuildArtifact: (artifactId) => ipcRenderer.invoke('hymn:reveal-build-artifact', artifactId),
   copyArtifactToMods: (artifactId) => ipcRenderer.invoke('hymn:copy-artifact-to-mods', artifactId),
+  listInstalledMods: () => ipcRenderer.invoke('hymn:list-installed-mods'),
   openBuildsFolder: () => ipcRenderer.invoke('hymn:open-builds-folder'),
   openInEditor: (path: string) => ipcRenderer.invoke('hymn:open-in-editor', path),
 }
@@ -114,7 +115,45 @@ const settingsApi: HymnSettingsApi = {
   selectServerJarPath: () => ipcRenderer.invoke('settings:selectServerJarPath'),
 }
 
+const fileWatcherApi: HymnFileWatcherApi = {
+  watchProject: (projectPath: string) => ipcRenderer.invoke('hymn:watch-project', projectPath),
+  unwatchProject: () => ipcRenderer.invoke('hymn:unwatch-project'),
+  onFileChange: (callback: (event: FileChangeEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changeEvent: FileChangeEvent) => callback(changeEvent)
+    ipcRenderer.on('project:file-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('project:file-changed', handler)
+    }
+  },
+  // Directory watcher methods
+  startModsWatcher: (modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) =>
+    ipcRenderer.invoke('hymn:start-mods-watcher', modsPath, packsPath, earlyPluginsPath),
+  stopModsWatcher: () => ipcRenderer.invoke('hymn:stop-mods-watcher'),
+  onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changeEvent: DirectoryChangeEvent) => callback(changeEvent)
+    ipcRenderer.on('directory:projects-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('directory:projects-changed', handler)
+    }
+  },
+  onBuildsChange: (callback: (event: DirectoryChangeEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changeEvent: DirectoryChangeEvent) => callback(changeEvent)
+    ipcRenderer.on('directory:builds-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('directory:builds-changed', handler)
+    }
+  },
+  onModsChange: (callback: (event: DirectoryChangeEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changeEvent: DirectoryChangeEvent) => callback(changeEvent)
+    ipcRenderer.on('directory:mods-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('directory:mods-changed', handler)
+    }
+  },
+}
+
 contextBridge.exposeInMainWorld('hymn', api)
 contextBridge.exposeInMainWorld('hymnWindow', windowApi)
 contextBridge.exposeInMainWorld('hymnTheme', themeApi)
 contextBridge.exposeInMainWorld('hymnSettings', settingsApi)
+contextBridge.exposeInMainWorld('hymnFileWatcher', fileWatcherApi)

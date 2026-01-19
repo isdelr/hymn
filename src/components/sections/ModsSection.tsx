@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Package,
   Plus,
-  RefreshCw,
   Search,
   X,
   Archive,
@@ -116,7 +115,7 @@ export function ModsSection() {
   const { data: installInfo } = useInstallInfo()
   const { data: worldsState } = useWorlds(!!installInfo?.activePath)
   const selectedWorldId = worldsState?.selectedWorldId ?? null
-  const { data: scanResult, isLoading: isScanning, refetch: runScan } = useMods(selectedWorldId)
+  const { data: scanResult, isLoading: isScanning } = useMods(selectedWorldId)
 
   // Mutations
   const toggleMod = useToggleMod()
@@ -261,16 +260,6 @@ export function ModsSection() {
         >
           <Plus className="h-4 w-4" />
           Add Mods
-        </Button>
-        <Button
-          variant="outline"
-          size="default"
-          onClick={() => runScan()}
-          disabled={isScanning || isTogglingMod || !installInfo?.activePath}
-          className="h-10 gap-2 border-border/50"
-        >
-          <RefreshCw className={cn('h-4 w-4', isScanning && 'animate-spin')} />
-          {isScanning ? 'Scanning' : 'Rescan'}
         </Button>
       </div>
 

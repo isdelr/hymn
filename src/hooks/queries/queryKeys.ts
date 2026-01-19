@@ -32,6 +32,10 @@ export const queryKeys = {
     file: (filePath: string) => ['javaSources', 'file', filePath] as const,
   },
 
+  projectFiles: {
+    all: (projectPath: string) => ['projectFiles', projectPath] as const,
+  },
+
   settings: {
     all: ['settings'] as const,
     theme: ['settings', 'theme'] as const,
@@ -45,5 +49,6 @@ export const queryKeys = {
     all: ['builds'] as const,
     artifacts: ['builds', 'artifacts'] as const,
     dependencies: ['builds', 'dependencies'] as const,
+    installedMods: ['builds', 'installedMods'] as const,
   },
 }

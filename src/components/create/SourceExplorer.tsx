@@ -10,8 +10,8 @@ import {
     Plus,
     Trash2,
     MoreVertical,
-    RefreshCw,
-    Pencil
+    Pencil,
+    Loader2
 } from 'lucide-react'
 import {
     DropdownMenu,
@@ -38,7 +38,6 @@ interface SourceExplorerProps {
     onRenameFile: (file: JavaSourceFile) => void
     onDeletePackage: (packagePath: string) => void
     onRenamePackage: (packagePath: string) => void
-    onRefresh: () => void
     isLoading: boolean
 }
 
@@ -270,7 +269,6 @@ export function SourceExplorer({
     onRenameFile,
     onDeletePackage,
     onRenamePackage,
-    onRefresh,
     isLoading
 }: SourceExplorerProps) {
     const tree = useMemo(
@@ -286,32 +284,21 @@ export function SourceExplorer({
                     <FileCode className="h-4 w-4 text-primary" />
                     <span className="font-semibold text-sm">Source Files</span>
                 </div>
-                <div className="flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onRefresh}
-                        disabled={isLoading}
-                        className="h-7 w-7"
-                    >
-                        <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onAddClass}
-                        className="h-7 w-7"
-                    >
-                        <Plus className="h-4 w-4" />
-                    </Button>
-                </div>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onAddClass}
+                    className="h-7 w-7"
+                >
+                    <Plus className="h-4 w-4" />
+                </Button>
             </div>
 
             {/* Tree */}
             <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
-                        <RefreshCw className="h-5 w-5 animate-spin mb-2" />
+                        <Loader2 className="h-5 w-5 animate-spin mb-2" />
                         <span className="text-xs">Loading...</span>
                     </div>
                 ) : sources.length === 0 ? (

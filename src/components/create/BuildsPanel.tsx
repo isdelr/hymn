@@ -7,7 +7,8 @@ import {
   Download,
   Clock,
   HardDrive,
-  RefreshCw,
+  FileText,
+  Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,7 +29,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useBuildArtifacts } from '@/hooks/queries'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { useBuildArtifacts, useInstalledMods } from '@/hooks/queries'
 import {
   useDeleteBuildArtifact,
   useClearAllBuildArtifacts,
@@ -74,16 +84,22 @@ function getBuildNumber(outputPath: string): number | null {
   return match ? parseInt(match[1], 10) : null
 }
 
+// Installation status for an artifact
+type InstallStatus = 'not-installed' | 'other-build-installed' | 'this-build-installed'
+
 interface ArtifactCardProps {
   artifact: BuildArtifact
+  installStatus: InstallStatus
   onDelete: (artifact: BuildArtifact) => void
   onInstall: (artifact: BuildArtifact) => void
   onReveal: (artifact: BuildArtifact) => void
+  onViewOutput: (artifact: BuildArtifact) => void
 }
 
-function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardProps) {
+function ArtifactCard({ artifact, installStatus, onDelete, onInstall, onReveal, onViewOutput }: ArtifactCardProps) {
   const isPlugin = artifact.artifactType === 'jar'
   const buildNumber = getBuildNumber(artifact.outputPath)
+  const isThisBuildInstalled = installStatus === 'this-build-installed'
 
   return (
     <div className="group relative flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
@@ -102,6 +118,12 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
           <Badge variant="outline" className="h-4 px-1.5 text-[9px] uppercase tracking-wider rounded-sm">
             {artifact.artifactType}
           </Badge>
+          {isThisBuildInstalled && (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[9px] uppercase tracking-wider rounded-sm bg-green-500/10 text-green-600 border-green-500/20">
+              <Check className="h-2.5 w-2.5 mr-0.5" />
+              Installed
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
           <span>
@@ -136,7 +158,7 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
           }}
         >
           <Download className="h-3.5 w-3.5" />
-          Install
+          {isThisBuildInstalled ? 'Reinstall' : 'Install'}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -160,6 +182,15 @@ function ArtifactCard({ artifact, onDelete, onInstall, onReveal }: ArtifactCardP
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {artifact.output && (
+              <>
+                <DropdownMenuItem onSelect={() => onViewOutput(artifact)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  View Build Output
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem onSelect={() => onReveal(artifact)}>
               <FolderOpen className="mr-2 h-4 w-4" />
               Show in Explorer
@@ -184,7 +215,8 @@ interface BuildsPanelProps {
 }
 
 export function BuildsPanel({ projectName }: BuildsPanelProps) {
-  const { data: allArtifacts = [], isLoading, refetch } = useBuildArtifacts()
+  const { data: allArtifacts = [], isLoading } = useBuildArtifacts()
+  const { data: installedMods = [] } = useInstalledMods()
 
   // Filter artifacts by project name if provided
   const artifacts = projectName
@@ -196,8 +228,26 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
   const revealArtifact = useRevealBuildArtifact()
   const openBuildsFolder = useOpenBuildsFolder()
 
+  // Determine install status for an artifact
+  const getInstallStatus = (artifact: BuildArtifact): InstallStatus => {
+    const artifactFilename = artifact.outputPath.split(/[/\\]/).pop() || ''
+    const installedMod = installedMods.find(m => m.projectName === artifact.projectName)
+
+    if (!installedMod) {
+      return 'not-installed'
+    }
+
+    // Check if this exact build is installed by comparing filenames
+    if (installedMod.fileName === artifactFilename) {
+      return 'this-build-installed'
+    }
+
+    return 'other-build-installed'
+  }
+
   const [artifactToDelete, setArtifactToDelete] = useState<BuildArtifact | null>(null)
   const [showClearAllDialog, setShowClearAllDialog] = useState(false)
+  const [artifactToViewOutput, setArtifactToViewOutput] = useState<BuildArtifact | null>(null)
 
   const handleDelete = (artifact: BuildArtifact) => {
     setArtifactToDelete(artifact)
@@ -230,6 +280,10 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
     revealArtifact.mutate(artifact.id)
   }
 
+  const handleViewOutput = (artifact: BuildArtifact) => {
+    setArtifactToViewOutput(artifact)
+  }
+
   // Group artifacts by project
   const groupedArtifacts = artifacts.reduce((acc, artifact) => {
     if (!acc[artifact.projectName]) {
@@ -254,16 +308,6 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
           >
             <FolderOpen className="h-4 w-4" />
             Open Folder
-          </Button>
-          <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isLoading}
-              className="h-8 gap-2"
-          >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-            Refresh
           </Button>
           {artifacts.length > 0 && (
             <Button
@@ -303,9 +347,11 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
+              installStatus={getInstallStatus(artifact)}
               onDelete={handleDelete}
               onInstall={handleInstall}
               onReveal={handleReveal}
+              onViewOutput={handleViewOutput}
             />
           ))}
         </div>
@@ -322,9 +368,11 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
                   <ArtifactCard
                     key={artifact.id}
                     artifact={artifact}
+                    installStatus={getInstallStatus(artifact)}
                     onDelete={handleDelete}
                     onInstall={handleInstall}
                     onReveal={handleReveal}
+                    onViewOutput={handleViewOutput}
                   />
                 ))}
               </div>
@@ -382,6 +430,53 @@ export function BuildsPanel({ projectName }: BuildsPanelProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!artifactToViewOutput} onOpenChange={() => setArtifactToViewOutput(null)}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              Build Output
+            </DialogTitle>
+            <DialogDescription>
+              {artifactToViewOutput?.projectName} v{artifactToViewOutput?.version}
+              {' '}&bull;{' '}
+              {artifactToViewOutput?.artifactType === 'jar' ? 'Plugin' : 'Asset Pack'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>{artifactToViewOutput && formatDuration(artifactToViewOutput.durationMs)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <HardDrive className="h-4 w-4" />
+                <span>{artifactToViewOutput && formatFileSize(artifactToViewOutput.fileSize)}</span>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Build Output</p>
+              <ScrollArea className="h-[300px] rounded-lg border bg-muted/30">
+                <pre className="p-3 text-xs font-mono whitespace-pre-wrap break-all">
+                  {artifactToViewOutput?.output || 'No output available'}
+                </pre>
+              </ScrollArea>
+              {artifactToViewOutput?.outputTruncated && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Output was truncated due to size limits.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setArtifactToViewOutput(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

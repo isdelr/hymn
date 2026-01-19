@@ -11,9 +11,11 @@ interface JavaFileEditorProps {
     file: JavaSourceFile | null
     onSave: (content: string) => Promise<void>
     onClose: () => void
+    /** Increment this to trigger a reload of the file from disk */
+    reloadTrigger?: number
 }
 
-export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
+export function JavaFileEditor({ file, onSave, onClose, reloadTrigger }: JavaFileEditorProps) {
     const [content, setContent] = useState<string>('')
     const [originalContent, setOriginalContent] = useState<string>('')
     const [isLoading, setIsLoading] = useState(false)
@@ -55,7 +57,7 @@ export function JavaFileEditor({ file, onSave, onClose }: JavaFileEditorProps) {
 
     useEffect(() => {
         loadFile()
-    }, [loadFile])
+    }, [loadFile, reloadTrigger])
 
     // Update dirty files context when content changes
     useEffect(() => {

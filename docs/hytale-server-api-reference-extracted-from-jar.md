@@ -2,6 +2,9 @@
 
 This document provides a comprehensive reference for the Hytale Server API, extracted from `HytaleServer.jar`.
 
+> **Verified Against:** `HytaleServer.jar` version `2026.01.15-c04fdfe10`
+> **Last Updated:** January 2026
+
 **Total API Classes:** 2,959 classes across 664 packages
 
 ## Table of Contents
@@ -636,19 +639,32 @@ val sender = object : CommandSender {
 
 ### Creating Commands
 
-**Package:** `com.hypixel.hytale.server.core.command`
+**Base Command Package:** `com.hypixel.hytale.server.core.command.system.basecommands`
 
 ```kotlin
-class MyCommand : Command {
-    override fun getName(): String = "mycommand"
-    override fun execute(sender: CommandSender, args: Array<String>) {
-        sender.sendMessage(Message.raw("Hello!"))
+// Player command example (extends AbstractPlayerCommand)
+class MyCommand : AbstractPlayerCommand("mycommand", "My command description") {
+    override fun execute(
+        context: CommandContext,
+        store: Store<EntityStore>,
+        ref: Ref<EntityStore>,
+        playerRef: PlayerRef,
+        world: World
+    ) {
+        val player = store.getComponent(ref, Player.getComponentType())
+        player.sendMessage(Message.raw("Hello!"))
     }
 }
 
-// Register in plugin
+// Register in plugin's setup() method
 commandRegistry.registerCommand(MyCommand())
 ```
+
+**Related Imports:**
+- `com.hypixel.hytale.server.core.command.system.CommandContext`
+- `com.hypixel.hytale.component.Ref`
+- `com.hypixel.hytale.component.Store`
+- `com.hypixel.hytale.server.core.universe.world.storage.EntityStore`
 
 ---
 

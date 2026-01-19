@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate, BuildPluginResult } from '@/shared/hymn-types'
+import { useState, useCallback } from 'react'
+import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate, BuildPluginResult, FileChangeEvent } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -32,6 +32,7 @@ import { RenameDialog } from './RenameDialog'
 
 // React Query hooks
 import { useJavaSources, useAssets, useDependencies, useProjects } from '@/hooks/queries'
+import { useFileWatcher } from '@/hooks/useFileWatcher'
 import {
     useCreateJavaClass,
     useDeleteJavaFile,
@@ -59,7 +60,7 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
     const [mode, setMode] = useState<WorkspaceMode>('source')
 
     // React Query data
-    const { data: sourceData, isLoading: isLoadingSources, refetch: refetchSources } = useJavaSources(project.path)
+    const { data: sourceData, isLoading: isLoadingSources } = useJavaSources(project.path)
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(
         project.includesAssetPack ? project.path : null
     )
@@ -110,6 +111,36 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
 
     // Project settings dialog state
     const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+
+    // Reload trigger for when external file changes are detected
+    const [editorReloadTrigger, setEditorReloadTrigger] = useState(0)
+
+    // File watcher - handles external file changes and auto-refreshes data
+    const handleFileChange = useCallback((event: FileChangeEvent) => {
+        // Handle editor reload for any file that matches the selected file
+        if (selectedFile && event.filePath === selectedFile.absolutePath) {
+            if (event.eventType === 'rename') {
+                // File was deleted or renamed - clear selection
+                setSelectedFile(null)
+            } else {
+                // File content changed - trigger editor reload
+                setEditorReloadTrigger((prev) => prev + 1)
+            }
+        }
+    }, [selectedFile])
+
+    const handleAssetChange = useCallback((event: FileChangeEvent) => {
+        // Only clear selection if the asset was deleted or renamed, not on regular saves
+        if (selectedAsset && event.filePath === selectedAsset.absolutePath && event.eventType === 'rename') {
+            setSelectedAsset(null)
+        }
+    }, [selectedAsset])
+
+    useFileWatcher({
+        projectPath: project.path,
+        onAnyFileChange: handleFileChange,
+        onAssetChange: handleAssetChange,
+    })
 
     // Dirty files tracking
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
@@ -448,7 +479,6 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                                 onRenameFile={handleRenameFile}
                                 onDeletePackage={handleDeletePackage}
                                 onRenamePackage={handleRenamePackage}
-                                onRefresh={() => refetchSources()}
                                 isLoading={isLoadingSources}
                             />
                         </div>
@@ -459,6 +489,7 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                                 file={selectedFile}
                                 onSave={handleSaveFile}
                                 onClose={() => setSelectedFile(null)}
+                                reloadTrigger={editorReloadTrigger}
                             />
                         </div>
                     </div>

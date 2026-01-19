@@ -1,6 +1,9 @@
 # Hytale Modding Reference (Verified)
 
-This document is based on direct examination of real Hytale mods, the game's Assets.zip, and official documentation. Last verified: January 2026.
+This document is based on direct examination of real Hytale mods, the game's Assets.zip, and official documentation.
+
+> **Verified Against:** `HytaleServer.jar` version `2026.01.15-c04fdfe10`
+> **Last Updated:** January 2026
 
 ## Modding Philosophy (Server-First)
 
@@ -263,6 +266,27 @@ Key features:
 2. `setup()` - Register commands, events, assets
 3. `start()` - Server ready, begin operation
 4. `shutdown()` - Clean up resources
+
+### Event Registration
+
+Events are registered using functional callbacks (no `EventListener` interface):
+
+```java
+// In your plugin's setup() method
+getEventRegistry().register(PlayerConnectEvent.class, event -> {
+    PlayerRef playerRef = event.getPlayerRef();
+    // Handle player connection
+});
+
+// Or using method references
+getEventRegistry().register(PlayerConnectEvent.class, this::onPlayerConnect);
+```
+
+**Key Event Classes:**
+- `com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent`
+- `com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent`
+- `com.hypixel.hytale.server.core.event.events.player.PlayerChatEvent` (async)
+- `com.hypixel.hytale.server.core.event.events.player.PlayerInteractEvent`
 
 ### Available Hytale Modules
 Plugins can depend on built-in modules:

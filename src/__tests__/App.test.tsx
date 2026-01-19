@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { routeTree } from '@/routeTree.gen'
 import type {
   HymnApi,
+  HymnFileWatcherApi,
   InstallInfo,
   ModEntry,
   Profile,
@@ -16,6 +17,7 @@ import type {
 declare global {
   interface Window {
     hymn: HymnApi
+    hymnFileWatcher: HymnFileWatcherApi
   }
 }
 
@@ -360,6 +362,9 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
       success: true,
       destinationPath: 'C:\\Hytale\\UserData\\Mods\\TestPlugin-1.0.0.jar',
     }),
+    listInstalledMods: vi.fn().mockResolvedValue({
+      mods: [],
+    }),
     openBuildsFolder: vi.fn().mockResolvedValue(undefined),
     openInEditor: vi.fn().mockResolvedValue(undefined),
     deleteProject: vi.fn().mockResolvedValue({
@@ -370,6 +375,21 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
   const merged = { ...api, ...overrides } as HymnApi
   window.hymn = merged
   return merged
+}
+
+const buildHymnFileWatcherApi = (): HymnFileWatcherApi => {
+  const api: HymnFileWatcherApi = {
+    watchProject: vi.fn().mockResolvedValue({ success: true }),
+    unwatchProject: vi.fn().mockResolvedValue({ success: true }),
+    onFileChange: vi.fn().mockReturnValue(() => {}),
+    startModsWatcher: vi.fn().mockResolvedValue(undefined),
+    stopModsWatcher: vi.fn().mockResolvedValue(undefined),
+    onProjectsChange: vi.fn().mockReturnValue(() => {}),
+    onBuildsChange: vi.fn().mockReturnValue(() => {}),
+    onModsChange: vi.fn().mockReturnValue(() => {}),
+  }
+  window.hymnFileWatcher = api
+  return api
 }
 
 const createTestQueryClient = () => {
@@ -411,6 +431,7 @@ const renderApp = async (queryClient?: QueryClient) => {
 // Reset before each test
 beforeEach(() => {
   vi.clearAllMocks()
+  buildHymnFileWatcherApi()
 })
 
 describe('App', () => {
