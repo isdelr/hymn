@@ -1,4 +1,4 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, app } from 'electron'
 import { readSetting, writeSetting, SETTINGS_KEYS } from '../core/database'
 import { downloadAndInstallJdk, cancelJdkDownload } from '../services/JdkDownloadService'
 import type { ThemeMode, ModSortOrder, GradleVersion } from '../../src/shared/hymn-types'
@@ -117,5 +117,10 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('settings:setGradleVersion', async (_event, version: GradleVersion) => {
     await writeSetting(SETTINGS_KEYS.gradleVersion, version)
+  })
+
+  // App version handler (reads from package.json via Electron)
+  ipcMain.handle('settings:getAppVersion', () => {
+    return app.getVersion()
   })
 }

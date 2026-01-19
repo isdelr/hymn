@@ -36,3 +36,11 @@ export function useGradleVersion() {
     queryFn: () => window.hymnSettings.getGradleVersion(),
   })
 }
+
+export function useAppVersion() {
+  return useQuery<string>({
+    queryKey: queryKeys.settings.appVersion,
+    queryFn: () => window.hymnSettings.getAppVersion(),
+    staleTime: Infinity,
+  })
+}

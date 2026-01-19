@@ -179,6 +179,8 @@ const settingsApi: HymnSettingsApi = {
   // Gradle version configuration
   getGradleVersion: () => ipcRenderer.invoke('settings:getGradleVersion'),
   setGradleVersion: (version: GradleVersion) => ipcRenderer.invoke('settings:setGradleVersion', version),
+  // App version
+  getAppVersion: () => ipcRenderer.invoke('settings:getAppVersion'),
 }
 
 const fileWatcherApi: HymnFileWatcherApi = {

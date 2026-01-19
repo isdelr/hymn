@@ -46,6 +46,7 @@ export const queryKeys = {
     managedJdkPath: ['settings', 'managedJdkPath'] as const,
     serverJarPath: ['settings', 'serverJarPath'] as const,
     gradleVersion: ['settings', 'gradleVersion'] as const,
+    appVersion: ['settings', 'appVersion'] as const,
   },
 
   builds: {

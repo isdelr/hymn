@@ -9,6 +9,7 @@ import {
   Download,
   X,
   FolderOpen,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils'
 import type { ThemeMode, ModSortOrder, GradleVersion, JdkDownloadProgress } from '@/shared/hymn-types'
 
 // React Query hooks
-import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath } from '@/hooks/queries'
+import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath, useAppVersion } from '@/hooks/queries'
 import {
   useSelectInstallPath,
   useSetTheme,
@@ -95,6 +96,7 @@ export function SettingsSection() {
   const { data: dependencies } = useDependencies()
   const { data: gradleVersion = '9.3.0' } = useGradleVersion()
   const { data: customJdkPath = null } = useJdkPath()
+  const { data: appVersion } = useAppVersion()
 
   // JDK download progress state
   const [jdkDownloadProgress, setJdkDownloadProgress] = useState<JdkDownloadProgress | null>(null)
@@ -390,6 +392,19 @@ export function SettingsSection() {
             <SelectItem value="size">Size</SelectItem>
           </SelectContent>
         </Select>
+      </SettingRow>
+
+      {/* Row 7: About */}
+      <SettingRow>
+        <IconBox colorClass="bg-gray-500/10">
+          <Info className="h-5 w-5 text-gray-500" />
+        </IconBox>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium">About Hymn</span>
+          <p className="text-xs text-muted-foreground">
+            Version {appVersion || '...'}
+          </p>
+        </div>
       </SettingRow>
     </div>
   )

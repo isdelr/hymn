@@ -870,6 +870,8 @@ export interface HymnSettingsApi {
   // Gradle version configuration
   getGradleVersion: () => Promise<GradleVersion>
   setGradleVersion: (version: GradleVersion) => Promise<void>
+  // App version
+  getAppVersion: () => Promise<string>
 }
 
 // File watcher types

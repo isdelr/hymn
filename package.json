@@ -28,6 +28,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "version": "node scripts/version.js",
+    "prebuild": "node scripts/version.js",
     "build": "tsc && vite build && electron-builder",
     "build:compile": "vite build",
     "typecheck": "tsc --noEmit",

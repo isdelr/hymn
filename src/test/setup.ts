@@ -37,6 +37,7 @@ if (!window.hymnSettings) {
     selectServerJarPath: vi.fn().mockResolvedValue(null),
     getGradleVersion: vi.fn().mockResolvedValue('9.3.0'),
     setGradleVersion: vi.fn().mockResolvedValue(undefined),
+    getAppVersion: vi.fn().mockResolvedValue('0.0.0-dev'),
   }
 }
 
