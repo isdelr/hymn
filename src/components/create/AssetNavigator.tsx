@@ -7,7 +7,11 @@ import {
     Code,
     Image as ImageIcon,
     FolderOpen,
-    LayoutGrid
+    LayoutGrid,
+    Rocket,
+    Dice5,
+    ChefHat,
+    Store
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ServerAssetKind } from '@/shared/hymn-types'
@@ -23,6 +27,10 @@ const CATEGORIES: AssetCategory[] = [
     { id: 'item', label: 'Items', icon: Package },
     { id: 'block', label: 'Blocks', icon: Box },
     { id: 'entity', label: 'NPCs & Entities', icon: Users },
+    { id: 'projectile', label: 'Projectiles', icon: Rocket },
+    { id: 'drop', label: 'Loot Tables', icon: Dice5 },
+    { id: 'recipe', label: 'Recipes', icon: ChefHat },
+    { id: 'barter', label: 'Shops', icon: Store },
     { id: 'audio', label: 'Audio', icon: Music },
     { id: 'ui', label: 'Interface', icon: Monitor },
     { id: 'script', label: 'Scripts', icon: Code },

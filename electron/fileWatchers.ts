@@ -95,6 +95,16 @@ export class WatcherManager {
     }
   }
 
+  stopProjectsWatcher(): void {
+    const key = 'projects'
+    const entry = this.watchers.get(key)
+    if (entry) {
+      entry.watcher.close()
+      this.watchers.delete(key)
+      console.log('Stopped projects watcher')
+    }
+  }
+
   startBuildsWatcher(): void {
     const key = 'builds'
     if (this.watchers.has(key)) return
@@ -108,6 +118,16 @@ export class WatcherManager {
       console.log('Started builds watcher:', buildsPluginsPath, buildsPacksPath)
     } catch (error) {
       console.error('Failed to start builds watcher:', error)
+    }
+  }
+
+  stopBuildsWatcher(): void {
+    const key = 'builds'
+    const entry = this.watchers.get(key)
+    if (entry) {
+      entry.watcher.close()
+      this.watchers.delete(key)
+      console.log('Stopped builds watcher')
     }
   }
 

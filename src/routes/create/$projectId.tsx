@@ -3,12 +3,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { Package } from 'lucide-react'
 import type { ProjectEntry } from '@/shared/hymn-types'
 import { ModWorkspace } from '@/components/create/ModWorkspace'
+import { useCreateWatchers } from '@/hooks/useRouteWatchers'
 
 export const Route = createFileRoute('/create/$projectId')({
   component: ProjectWorkspacePage,
 })
 
 function ProjectWorkspacePage() {
+  // Start file watchers for this route (projects + builds)
+  useCreateWatchers()
+
   const { projectId } = Route.useParams()
   const navigate = useNavigate()
   const [project, setProject] = useState<ProjectEntry | null>(null)

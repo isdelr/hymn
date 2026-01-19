@@ -60,6 +60,7 @@ import {
   useExportWorldMods,
   useImportWorldMods,
 } from '@/hooks/mutations'
+import { useModsWatchers } from '@/hooks/useRouteWatchers'
 
 const getModIcon = (type: ModEntry['type']) => {
   switch (type) {
@@ -115,6 +116,9 @@ const formatFileSize = (bytes: number | undefined): string => {
 }
 
 export function ModsSection() {
+  // Start file watchers for this route (mods + world config)
+  useModsWatchers()
+
   // React Query data
   const { data: installInfo } = useInstallInfo()
   const { data: worldsState } = useWorlds(!!installInfo?.activePath)

@@ -372,6 +372,11 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     restoreDeletedMod: vi.fn().mockResolvedValue({ success: true, restoredPath: '' }),
     permanentlyDeleteMod: vi.fn().mockResolvedValue({ success: true }),
     clearDeletedMods: vi.fn().mockResolvedValue({ success: true, deletedCount: 0 }),
+    // Translation management
+    listPackLanguages: vi.fn().mockResolvedValue({ languages: [] }),
+    getPackTranslations: vi.fn().mockResolvedValue({ translations: {}, filePath: '' }),
+    savePackTranslations: vi.fn().mockResolvedValue({ success: true }),
+    createPackLanguage: vi.fn().mockResolvedValue({ success: true, filePath: '' }),
     deleteProject: vi.fn().mockResolvedValue({
       success: true,
     }),
@@ -389,6 +394,10 @@ const buildHymnFileWatcherApi = (): HymnFileWatcherApi => {
     onFileChange: vi.fn().mockReturnValue(() => {}),
     startModsWatcher: vi.fn().mockResolvedValue(undefined),
     stopModsWatcher: vi.fn().mockResolvedValue(undefined),
+    startProjectsWatcher: vi.fn().mockResolvedValue(undefined),
+    stopProjectsWatcher: vi.fn().mockResolvedValue(undefined),
+    startBuildsWatcher: vi.fn().mockResolvedValue(undefined),
+    stopBuildsWatcher: vi.fn().mockResolvedValue(undefined),
     onProjectsChange: vi.fn().mockReturnValue(() => {}),
     onBuildsChange: vi.fn().mockReturnValue(() => {}),
     onModsChange: vi.fn().mockReturnValue(() => {}),

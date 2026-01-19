@@ -124,6 +124,16 @@ import type {
   // Asset file picker types
   SelectAssetFileOptions,
   SelectAssetFileResult,
+  // Translation management types
+  ListPackLanguagesOptions,
+  ListPackLanguagesResult,
+  GetPackTranslationsOptions,
+  GetPackTranslationsResult,
+  SavePackTranslationsOptions,
+  SavePackTranslationsResult,
+  CreatePackLanguageOptions,
+  CreatePackLanguageResult,
+  PackLanguageInfo,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -231,10 +241,6 @@ app.whenReady().then(async () => {
 
   // Set up the watcher manager with the window reference
   watcherManager.setWindow(win)
-
-  // Start projects and builds watchers eagerly
-  watcherManager.startProjectsWatcher()
-  watcherManager.startBuildsWatcher()
 })
 
 function getDefaultInstallPath() {
@@ -1479,6 +1485,354 @@ const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, (id: string, l
     Goals: ["Wander", "LookAround", "AttackTarget"],
     Sensors: ["Sight", "Hearing"]
   }),
+  entity_flying: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Neutral",
+    MovementType: "Flying",
+    FlightProperties: {
+      MaxAltitude: 100,
+      HoverSpeed: 2.0,
+      CanLand: true
+    },
+    Goals: ["Fly", "Wander", "LookAround"]
+  }),
+  entity_swimming: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Neutral",
+    MovementType: "Swimming",
+    SwimmingProperties: {
+      MaxDepth: 50,
+      CanBreathUnderwater: true,
+      SwimSpeed: 3.0
+    },
+    Goals: ["Swim", "Wander"]
+  }),
+  entity_boss: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 2.0
+    },
+    Faction: "Hostile",
+    BossProperties: {
+      ShowHealthBar: true,
+      Phases: 1,
+      MusicId: null
+    },
+    Health: 500,
+    Goals: ["AttackTarget", "LookAround"],
+    Sensors: ["Sight", "Hearing"]
+  }),
+  entity_passive: (id, label) => ({
+    Prefab: id,
+    TranslationProperties: { Name: label },
+    Character: {
+      Model: `Lookups/Characters/${id}.blockymodel`,
+      Scale: 1.0
+    },
+    Faction: "Passive",
+    Goals: ["Wander", "Graze", "Flee"]
+  }),
+  // Tools
+  item_axe: (id, label) => ({
+    PlayerAnimationsId: 'TwoHanded',
+    Categories: ['Items.Tools'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    GatheringAttributes: {
+      Type: "Axe",
+      Level: 1,
+      Efficiency: 5.0
+    },
+    Durability: 500
+  }),
+  item_shovel: (id, label) => ({
+    PlayerAnimationsId: 'TwoHanded',
+    Categories: ['Items.Tools'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    GatheringAttributes: {
+      Type: "Shovel",
+      Level: 1,
+      Efficiency: 5.0
+    },
+    Durability: 500
+  }),
+  item_hoe: (id, label) => ({
+    PlayerAnimationsId: 'TwoHanded',
+    Categories: ['Items.Tools'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    GatheringAttributes: {
+      Type: "Hoe",
+      Level: 1,
+      Efficiency: 5.0
+    },
+    Durability: 250
+  }),
+  item_fishing_rod: (id, label) => ({
+    PlayerAnimationsId: 'FishingRod',
+    Categories: ['Items.Tools'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    FishingProperties: {
+      CastDistance: 10.0,
+      ReelSpeed: 1.0,
+      LureAttraction: 1.0
+    },
+    Durability: 100
+  }),
+  // Armor
+  item_armor_helmet: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Armor'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    ArmorProperties: {
+      Slot: "Head",
+      Defense: 2,
+      Toughness: 0
+    },
+    Durability: 165
+  }),
+  item_armor_chestplate: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Armor'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    ArmorProperties: {
+      Slot: "Chest",
+      Defense: 6,
+      Toughness: 0
+    },
+    Durability: 240
+  }),
+  item_armor_leggings: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Armor'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    ArmorProperties: {
+      Slot: "Legs",
+      Defense: 5,
+      Toughness: 0
+    },
+    Durability: 225
+  }),
+  item_armor_boots: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Armor'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    ArmorProperties: {
+      Slot: "Feet",
+      Defense: 2,
+      Toughness: 0
+    },
+    Durability: 195
+  }),
+  // Consumables
+  item_food: (id, label) => ({
+    PlayerAnimationsId: 'Consumable',
+    Categories: ['Items.Consumables', 'Items.Food'],
+    MaxStack: 64,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    FoodProperties: {
+      Nutrition: 4,
+      Saturation: 2.4,
+      ConsumeTime: 1.6,
+      CanAlwaysEat: false
+    }
+  }),
+  item_potion: (id, label) => ({
+    PlayerAnimationsId: 'Consumable',
+    Categories: ['Items.Consumables', 'Items.Potions'],
+    MaxStack: 16,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    PotionProperties: {
+      Duration: 60.0,
+      ConsumeTime: 1.2,
+      Effects: []
+    }
+  }),
+  // Other Items
+  item_ingredient: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Ingredients'],
+    MaxStack: 64,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label }
+  }),
+  item_projectile: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Ammunition'],
+    MaxStack: 64,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    ProjectileProperties: {
+      Damage: 5,
+      Velocity: 30.0,
+      Gravity: 0.05
+    }
+  }),
+  item_cosmetic: (id, label) => ({
+    PlayerAnimationsId: 'Item',
+    Categories: ['Items.Cosmetics'],
+    MaxStack: 1,
+    Icon: `Icons/ItemsGenerated/${id}.png`,
+    Model: `Items/${id}.blockymodel`,
+    TranslationProperties: { Name: label },
+    CosmeticProperties: {
+      Slot: "Back",
+      ClientOnly: true
+    }
+  }),
+  // New Blocks
+  block_furniture: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: { Name: label },
+    ExampleState: {
+      RenderType: "Solid",
+      Collidable: true,
+      Hardness: 0.5,
+      Resistance: 2.0
+    },
+    FurnitureProperties: {
+      CanSit: false,
+      CanInteract: true
+    }
+  }),
+  block_crop: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: { Name: label },
+    ExampleState: {
+      RenderType: "Cutout",
+      Collidable: false,
+      Hardness: 0.0,
+      Resistance: 0.0
+    },
+    CropProperties: {
+      GrowthStages: 4,
+      GrowthTime: 300.0,
+      RequiresWater: true,
+      DropItem: id
+    }
+  }),
+  block_container: (id, label) => ({
+    BlockType: id,
+    TranslationProperties: { Name: label },
+    ExampleState: {
+      RenderType: "Solid",
+      Collidable: true,
+      Hardness: 2.0,
+      Resistance: 5.0
+    },
+    ContainerProperties: {
+      Slots: 27,
+      Rows: 3,
+      Columns: 9
+    }
+  }),
+  // Data Types
+  drop_weighted: (id) => ({
+    Id: id,
+    TotalRolls: 1,
+    Items: [
+      {
+        ItemId: "Example_Item",
+        Weight: 1.0,
+        Min: 1,
+        Max: 1
+      }
+    ]
+  }),
+  recipe_shaped: (id) => ({
+    Id: id,
+    Type: "Shaped",
+    Pattern: [
+      "###",
+      " | ",
+      " | "
+    ],
+    Key: {
+      "#": "Example_Material",
+      "|": "Example_Stick"
+    },
+    Result: {
+      ItemId: "Example_Output",
+      Count: 1
+    }
+  }),
+  recipe_shapeless: (id) => ({
+    Id: id,
+    Type: "Shapeless",
+    Ingredients: [
+      "Example_Item_A",
+      "Example_Item_B"
+    ],
+    Result: {
+      ItemId: "Example_Output",
+      Count: 1
+    }
+  }),
+  barter_shop: (id) => ({
+    Id: id,
+    Trades: [
+      {
+        Input: [{ ItemId: "Currency", Count: 10 }],
+        Output: [{ ItemId: "Example_Item", Count: 1 }],
+        Stock: 16,
+        MaxStock: 16,
+        RestockTime: 1200.0
+      }
+    ]
+  }),
+  projectile: (id) => ({
+    Id: id,
+    Physics: {
+      Velocity: 30.0,
+      Gravity: 0.05,
+      Drag: 0.01
+    },
+    Damage: 5,
+    Lifetime: 60.0,
+    Model: `Projectiles/${id}.blockymodel`,
+    HitEffects: []
+  }),
+  // Audio & UI
   audio: () => ({
     Events: []
   }),
@@ -1549,6 +1903,12 @@ function resolveServerAssetKind(relativePath: string, filePath: string): ServerA
   if (loweredPath.includes('/items/') || loweredPath.includes('/item/')) return 'item'
   if (loweredPath.includes('/blocks/') || loweredPath.includes('/block/')) return 'block'
   if (loweredPath.includes('/entity/') || loweredPath.includes('/npc/')) return 'entity'
+  if (loweredPath.includes('/projectiles/') || loweredPath.includes('/projectile/')) return 'projectile'
+  if (loweredPath.includes('/drops/') || loweredPath.includes('/loot/')) return 'drop'
+  if (loweredPath.includes('/recipes/') || loweredPath.includes('/recipe/')) return 'recipe'
+  if (loweredPath.includes('/barter/') || loweredPath.includes('/shops/') || loweredPath.includes('/shop/')) return 'barter'
+  if (loweredPath.includes('/prefabs/') || loweredPath.includes('/prefab/')) return 'prefab'
+  if (loweredPath.includes('/effects/') || loweredPath.includes('/effect/')) return 'effect'
 
   // Naive content check
   try {
@@ -1557,6 +1917,12 @@ function resolveServerAssetKind(relativePath: string, filePath: string): ServerA
     if (json.Prefab) return 'entity'
     if (json.PlayerAnimationsId || json.MaxStack) return 'item'
     if (json.Events && Array.isArray(json.Events)) return 'audio'
+    // New data type detection
+    if (json.TotalRolls && json.Items) return 'drop'
+    if (json.Pattern || json.Ingredients) return 'recipe'
+    if (json.Trades) return 'barter'
+    if (json.Physics && json.Damage !== undefined && json.Lifetime !== undefined) return 'projectile'
+    if (json.HitEffects || json.EffectType) return 'effect'
   } catch { /* JSON parse failed, use 'other' */ }
 
   return 'other'
@@ -2538,7 +2904,8 @@ async function addDirectoryToZipFiltered(
     }
 
     const fullPath = path.join(dir, entry.name)
-    const relativePath = path.relative(baseDir, fullPath)
+    // Normalize path separators to forward slashes for ZIP compatibility (Hytale expects Unix-style paths)
+    const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, '/')
 
     if (entry.isDirectory()) {
       await addDirectoryToZipFiltered(zip, fullPath, baseDir, excludes)
@@ -3860,47 +4227,42 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
 
   await ensureDir(packPath)
 
+  // Create folder structure matching Hytale conventions
   if (options.includeCommon !== false) {
     await ensureDir(path.join(packPath, 'Common'))
-    await ensureDir(path.join(packPath, 'Common', 'BlockTextures'))
-    await ensureDir(path.join(packPath, 'Common', 'Models'))
+    await ensureDir(path.join(packPath, 'Common', 'Icons', 'ItemsGenerated'))
+    await ensureDir(path.join(packPath, 'Common', 'Items'))
+    await ensureDir(path.join(packPath, 'Common', 'Blocks'))
   }
 
   if (options.includeServer !== false) {
     await ensureDir(path.join(packPath, 'Server'))
-    await ensureDir(path.join(packPath, 'Server', 'Item'))
     await ensureDir(path.join(packPath, 'Server', 'Item', 'Items'))
-    await ensureDir(path.join(packPath, 'Server', 'Languages'))
     await ensureDir(path.join(packPath, 'Server', 'Languages', 'en-US'))
   }
 
+  // Build manifest with all required fields for Hytale compatibility
   const manifest: PackManifest = {
+    Group: options.group?.trim() || safeName,
     Name: packName,
-  }
-
-  if (options.group?.trim()) {
-    manifest.Group = options.group.trim()
-  }
-
-  manifest.Version = options.version?.trim() || '1.0.0'
-
-  if (options.description?.trim()) {
-    manifest.Description = options.description.trim()
-  }
-
-  if (options.authorName?.trim()) {
-    const author: { Name: string; Email?: string } = { Name: options.authorName.trim() }
-    if (options.authorEmail?.trim()) {
-      author.Email = options.authorEmail.trim()
-    }
-    manifest.Authors = [author]
+    Version: options.version?.trim() || '1.0.0',
+    Description: options.description?.trim() || '',
+    Authors: options.authorName?.trim()
+      ? [{ Name: options.authorName.trim(), Email: options.authorEmail?.trim() || '', Url: '' }]
+      : [],
+    Website: '',
+    ServerVersion: '*',
+    Dependencies: {},
+    OptionalDependencies: {},
+    DisabledByDefault: false,
   }
 
   const manifestPath = path.join(packPath, 'manifest.json')
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8')
 
   if (options.includeServer !== false) {
-    const langContent = `${safeName}.name = ${packName}\n`
+    // Create empty language file - translations will be added via TranslationsEditor
+    const langContent = `# ${packName} translations\n# Format: items.ItemId.name = Display Name\n`
     await fs.writeFile(
       path.join(packPath, 'Server', 'Languages', 'en-US', 'server.lang'),
       langContent,
@@ -3913,6 +4275,135 @@ async function createPack(options: CreatePackOptions): Promise<CreatePackResult>
     path: packPath,
     manifestPath,
   }
+}
+
+// Language code to display name mapping
+const LANGUAGE_NAMES: Record<string, string> = {
+  'en-US': 'English (US)',
+  'en-GB': 'English (UK)',
+  'es-ES': 'Spanish (Spain)',
+  'es-MX': 'Spanish (Mexico)',
+  'fr-FR': 'French',
+  'de-DE': 'German',
+  'it-IT': 'Italian',
+  'pt-BR': 'Portuguese (Brazil)',
+  'pt-PT': 'Portuguese (Portugal)',
+  'ru-RU': 'Russian',
+  'zh-CN': 'Chinese (Simplified)',
+  'zh-TW': 'Chinese (Traditional)',
+  'ja-JP': 'Japanese',
+  'ko-KR': 'Korean',
+  'pl-PL': 'Polish',
+  'nl-NL': 'Dutch',
+  'sv-SE': 'Swedish',
+  'da-DK': 'Danish',
+  'fi-FI': 'Finnish',
+  'no-NO': 'Norwegian',
+}
+
+async function listPackLanguages(options: ListPackLanguagesOptions): Promise<ListPackLanguagesResult> {
+  const languagesDir = path.join(options.packPath, 'Server', 'Languages')
+
+  if (!(await pathExists(languagesDir))) {
+    return { languages: [] }
+  }
+
+  const entries = await fs.readdir(languagesDir, { withFileTypes: true })
+  const languages: PackLanguageInfo[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+
+    const langCode = entry.name
+    const langFile = path.join(languagesDir, langCode, 'server.lang')
+
+    if (!(await pathExists(langFile))) continue
+
+    const content = await fs.readFile(langFile, 'utf-8')
+    // Count non-empty, non-comment lines
+    const lines = content.split('\n').filter((line) => {
+      const trimmed = line.trim()
+      return trimmed && !trimmed.startsWith('#')
+    })
+
+    languages.push({
+      code: langCode,
+      name: LANGUAGE_NAMES[langCode] || langCode,
+      filePath: langFile,
+      entryCount: lines.length,
+    })
+  }
+
+  return { languages }
+}
+
+async function getPackTranslations(options: GetPackTranslationsOptions): Promise<GetPackTranslationsResult> {
+  const langFile = path.join(options.packPath, 'Server', 'Languages', options.langCode, 'server.lang')
+
+  if (!(await pathExists(langFile))) {
+    throw new Error(`Language file not found: ${options.langCode}`)
+  }
+
+  const content = await fs.readFile(langFile, 'utf-8')
+  const translations: Record<string, string> = {}
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+
+    // Parse key = value format
+    const eqIndex = trimmed.indexOf('=')
+    if (eqIndex === -1) continue
+
+    const key = trimmed.slice(0, eqIndex).trim()
+    const value = trimmed.slice(eqIndex + 1).trim()
+
+    if (key) {
+      translations[key] = value
+    }
+  }
+
+  return { translations, filePath: langFile }
+}
+
+async function savePackTranslations(options: SavePackTranslationsOptions): Promise<SavePackTranslationsResult> {
+  const langFile = path.join(options.packPath, 'Server', 'Languages', options.langCode, 'server.lang')
+  const langDir = path.dirname(langFile)
+
+  await ensureDir(langDir)
+
+  // Build content with sorted keys for consistency
+  const lines: string[] = [
+    '# Translations file',
+    '# Format: key = value',
+    '',
+  ]
+
+  const sortedKeys = Object.keys(options.translations).sort()
+  for (const key of sortedKeys) {
+    lines.push(`${key} = ${options.translations[key]}`)
+  }
+
+  await fs.writeFile(langFile, lines.join('\n') + '\n', 'utf-8')
+
+  return { success: true }
+}
+
+async function createPackLanguage(options: CreatePackLanguageOptions): Promise<CreatePackLanguageResult> {
+  const langDir = path.join(options.packPath, 'Server', 'Languages', options.langCode)
+  const langFile = path.join(langDir, 'server.lang')
+
+  if (await pathExists(langFile)) {
+    throw new Error(`Language "${options.langCode}" already exists`)
+  }
+
+  await ensureDir(langDir)
+
+  // Create empty language file with header
+  const content = `# ${LANGUAGE_NAMES[options.langCode] || options.langCode} translations\n# Format: key = value\n`
+  await fs.writeFile(langFile, content, 'utf-8')
+
+  return { success: true, filePath: langFile }
 }
 
 async function createPlugin(options: CreatePluginOptions): Promise<CreatePluginResult> {
@@ -5311,7 +5802,7 @@ async function deleteProject(options: DeleteProjectOptions): Promise<DeleteProje
 }
 
 async function installProject(options: InstallProjectOptions): Promise<InstallProjectResult> {
-  const { projectPath, projectType } = options
+  const { projectPath, projectType: _projectType } = options
   const info = await resolveInstallInfo()
   if (!info.activePath) {
     throw new Error('Hytale install path not configured.')
@@ -5651,6 +6142,12 @@ function registerIpcHandlers() {
     }
   })
 
+  // Translation management handlers
+  ipcMain.handle('hymn:list-pack-languages', async (_event, options: ListPackLanguagesOptions) => listPackLanguages(options))
+  ipcMain.handle('hymn:get-pack-translations', async (_event, options: GetPackTranslationsOptions) => getPackTranslations(options))
+  ipcMain.handle('hymn:save-pack-translations', async (_event, options: SavePackTranslationsOptions) => savePackTranslations(options))
+  ipcMain.handle('hymn:create-pack-language', async (_event, options: CreatePackLanguageOptions) => createPackLanguage(options))
+
   // Theme handlers
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors)
   ipcMain.handle('theme:set', async (_event, theme: ThemeMode) => {
@@ -5779,6 +6276,22 @@ function registerIpcHandlers() {
   })
   ipcMain.handle('hymn:stop-mods-watcher', async () => {
     watcherManager.stopModsWatcher()
+  })
+
+  // Projects watcher handlers
+  ipcMain.handle('hymn:start-projects-watcher', async () => {
+    watcherManager.startProjectsWatcher()
+  })
+  ipcMain.handle('hymn:stop-projects-watcher', async () => {
+    watcherManager.stopProjectsWatcher()
+  })
+
+  // Builds watcher handlers
+  ipcMain.handle('hymn:start-builds-watcher', async () => {
+    watcherManager.startBuildsWatcher()
+  })
+  ipcMain.handle('hymn:stop-builds-watcher', async () => {
+    watcherManager.stopBuildsWatcher()
   })
 
   // World config watcher handlers (for detecting external mod toggles)

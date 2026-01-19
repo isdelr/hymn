@@ -13,6 +13,7 @@ import {
     Play,
     Archive,
     Settings,
+    Languages,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -28,6 +29,7 @@ import { PluginWorkspace } from './PluginWorkspace'
 import { BuildOutputDialog } from './BuildOutputDialog'
 import { BuildsPanel } from './BuildsPanel'
 import { ProjectSettingsDialog } from './ProjectSettingsDialog'
+import { TranslationsEditor } from './TranslationsEditor'
 
 // React Query hooks
 import { useAssets, useProjects } from '@/hooks/queries'
@@ -53,6 +55,7 @@ const NAV_ITEMS = [
     { id: 'entity', label: 'Entities', icon: Users },
     { id: 'audio', label: 'Audio', icon: Music },
     { id: 'ui', label: 'Interface', icon: Monitor },
+    { id: 'translations', label: 'Translations', icon: Languages },
     { id: 'builds', label: 'Builds', icon: Archive },
 ]
 
@@ -152,10 +155,12 @@ export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspace
         if (!pendingTemplate) return
 
         // Determine destination based on category mapping
-        let subfolder = 'Items'
-        if (pendingTemplate.category === 'Blocks') subfolder = 'Blocks'
-        if (pendingTemplate.category === 'Entities') subfolder = 'Entity'
-        if (pendingTemplate.category === 'Audio') subfolder = 'Audio'
+        // Hytale expects Server assets under Server/<Category>/<SubCategory>/ paths
+        // e.g., Server/Item/Items/, Server/Block/Blocks/, Server/Entity/Entities/
+        let subfolder = 'Item/Items'
+        if (pendingTemplate.category === 'Blocks') subfolder = 'Block/Blocks'
+        if (pendingTemplate.category === 'Entities') subfolder = 'Entity/Entities'
+        if (pendingTemplate.category === 'Audio') subfolder = 'Audio/Sounds'
 
         const result = await createAsset.mutateAsync({
             projectPath: project.path,
@@ -295,6 +300,8 @@ export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspace
                     <div className="p-6 overflow-auto h-full">
                         <BuildsPanel projectName={project.name} />
                     </div>
+                ) : activeCategory === 'translations' ? (
+                    <TranslationsEditor packPath={project.path} />
                 ) : isLoading ? (
                     <div className="flex-1 h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
                         <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />

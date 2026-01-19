@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions } from '../src/shared/hymn-types'
 
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -89,6 +89,11 @@ const api: HymnApi = {
   restoreDeletedMod: (options: RestoreDeletedModOptions) => ipcRenderer.invoke('hymn:restore-deleted-mod', options),
   permanentlyDeleteMod: (options: { backupId: string }) => ipcRenderer.invoke('hymn:permanently-delete-mod', options),
   clearDeletedMods: () => ipcRenderer.invoke('hymn:clear-deleted-mods'),
+  // Translation management
+  listPackLanguages: (options: ListPackLanguagesOptions) => ipcRenderer.invoke('hymn:list-pack-languages', options),
+  getPackTranslations: (options: GetPackTranslationsOptions) => ipcRenderer.invoke('hymn:get-pack-translations', options),
+  savePackTranslations: (options: SavePackTranslationsOptions) => ipcRenderer.invoke('hymn:save-pack-translations', options),
+  createPackLanguage: (options: CreatePackLanguageOptions) => ipcRenderer.invoke('hymn:create-pack-language', options),
 }
 
 const themeApi: HymnThemeApi = {
@@ -149,6 +154,10 @@ const fileWatcherApi: HymnFileWatcherApi = {
   startModsWatcher: (modsPath: string | null, earlyPluginsPath: string | null) =>
     ipcRenderer.invoke('hymn:start-mods-watcher', modsPath, earlyPluginsPath),
   stopModsWatcher: () => ipcRenderer.invoke('hymn:stop-mods-watcher'),
+  startProjectsWatcher: () => ipcRenderer.invoke('hymn:start-projects-watcher'),
+  stopProjectsWatcher: () => ipcRenderer.invoke('hymn:stop-projects-watcher'),
+  startBuildsWatcher: () => ipcRenderer.invoke('hymn:start-builds-watcher'),
+  stopBuildsWatcher: () => ipcRenderer.invoke('hymn:stop-builds-watcher'),
   onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, changeEvent: DirectoryChangeEvent) => callback(changeEvent)
     ipcRenderer.on('directory:projects-changed', handler)

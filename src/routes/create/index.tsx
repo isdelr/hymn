@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 // React Query hooks
 import { useInstallInfo, useProjects } from '@/hooks/queries'
 import { useCreatePack, useCreatePlugin, useDeleteProject } from '@/hooks/mutations'
+import { useCreateWatchers } from '@/hooks/useRouteWatchers'
 
 export const Route = createFileRoute('/create/')({
   component: CreateIndexPage,
@@ -61,6 +62,9 @@ function InfoTooltip({ children }: { children: React.ReactNode }) {
 type ProjectType = 'pack' | 'plugin'
 
 function CreateIndexPage() {
+  // Start file watchers for this route (projects + builds)
+  useCreateWatchers()
+
   // React Query data
   const { data: installInfo } = useInstallInfo()
   const { data: projects = [], isLoading: isLoadingProjects } = useProjects()

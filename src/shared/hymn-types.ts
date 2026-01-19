@@ -62,7 +62,7 @@ export interface ModBuildResult {
   truncated: boolean
 }
 
-export type ServerAssetKind = 'item' | 'block' | 'entity' | 'audio' | 'ui' | 'model' | 'texture' | 'script' | 'category' | 'other'
+export type ServerAssetKind = 'item' | 'block' | 'entity' | 'audio' | 'ui' | 'model' | 'texture' | 'script' | 'category' | 'projectile' | 'drop' | 'recipe' | 'barter' | 'prefab' | 'effect' | 'other'
 
 export interface ServerAsset {
   id: string
@@ -85,11 +85,28 @@ export interface ServerAssetListResult {
 }
 
 export type ServerAssetTemplate =
+  // Items - Weapons
   | 'item' | 'item_sword' | 'item_pickaxe'
+  // Items - Tools
+  | 'item_axe' | 'item_shovel' | 'item_hoe' | 'item_fishing_rod'
+  // Items - Armor
+  | 'item_armor_helmet' | 'item_armor_chestplate' | 'item_armor_leggings' | 'item_armor_boots'
+  // Items - Consumables
+  | 'item_food' | 'item_potion'
+  // Items - Other
+  | 'item_ingredient' | 'item_projectile' | 'item_cosmetic'
+  // Blocks
   | 'block' | 'block_simple' | 'block_liquid'
+  | 'block_furniture' | 'block_crop' | 'block_container'
+  // Entities
   | 'entity' | 'entity_npc' | 'entity_mob'
+  | 'entity_flying' | 'entity_swimming' | 'entity_boss' | 'entity_passive'
+  // Data Types
+  | 'drop_weighted' | 'recipe_shaped' | 'recipe_shapeless' | 'barter_shop' | 'projectile'
+  // Audio & UI
   | 'audio' | 'audio_sfx'
   | 'ui' | 'ui_page'
+  // Misc
   | 'category' | 'empty'
 
 // Java class templates for plugins
@@ -676,6 +693,57 @@ export interface SelectAssetFileResult {
   relativePath: string | null // Relative path from modRoot, or null if canceled
 }
 
+// Translation management types
+export interface TranslationEntry {
+  key: string
+  value: string
+}
+
+export interface PackLanguageInfo {
+  code: string // e.g., "en-US"
+  name: string // e.g., "English (US)"
+  filePath: string // Full path to .lang file
+  entryCount: number
+}
+
+export interface ListPackLanguagesOptions {
+  packPath: string
+}
+
+export interface ListPackLanguagesResult {
+  languages: PackLanguageInfo[]
+}
+
+export interface GetPackTranslationsOptions {
+  packPath: string
+  langCode: string
+}
+
+export interface GetPackTranslationsResult {
+  translations: Record<string, string>
+  filePath: string
+}
+
+export interface SavePackTranslationsOptions {
+  packPath: string
+  langCode: string
+  translations: Record<string, string>
+}
+
+export interface SavePackTranslationsResult {
+  success: boolean
+}
+
+export interface CreatePackLanguageOptions {
+  packPath: string
+  langCode: string
+}
+
+export interface CreatePackLanguageResult {
+  success: boolean
+  filePath: string
+}
+
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
@@ -751,6 +819,11 @@ export interface HymnApi {
   restoreDeletedMod: (options: RestoreDeletedModOptions) => Promise<RestoreDeletedModResult>
   permanentlyDeleteMod: (options: { backupId: string }) => Promise<{ success: boolean }>
   clearDeletedMods: () => Promise<{ success: boolean; deletedCount: number }>
+  // Translation management
+  listPackLanguages: (options: ListPackLanguagesOptions) => Promise<ListPackLanguagesResult>
+  getPackTranslations: (options: GetPackTranslationsOptions) => Promise<GetPackTranslationsResult>
+  savePackTranslations: (options: SavePackTranslationsOptions) => Promise<SavePackTranslationsResult>
+  createPackLanguage: (options: CreatePackLanguageOptions) => Promise<CreatePackLanguageResult>
 }
 
 // Window control API for frameless window
@@ -834,6 +907,10 @@ export interface HymnFileWatcherApi {
   // Directory watcher methods
   startModsWatcher: (modsPath: string | null, earlyPluginsPath: string | null) => Promise<void>
   stopModsWatcher: () => Promise<void>
+  startProjectsWatcher: () => Promise<void>
+  stopProjectsWatcher: () => Promise<void>
+  startBuildsWatcher: () => Promise<void>
+  stopBuildsWatcher: () => Promise<void>
   onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
   onBuildsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
   onModsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
