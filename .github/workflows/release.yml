@@ -71,12 +71,10 @@ jobs:
         with:
           name: release-${{ matrix.platform }}
           path: |
-            release/**/*.exe
+            release/**/*-Setup.exe
             release/**/*.dmg
             release/**/*.AppImage
-            release/**/*.deb
-            release/**/*.zip
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 1
 
   release:

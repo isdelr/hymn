@@ -78,7 +78,9 @@ export function getDefaultHytalePath(): string {
   } else if (process.platform === 'darwin') {
     return path.join(process.env.HOME || '', 'Library', 'Application Support', 'Hytale')
   } else {
-    return path.join(process.env.HOME || '', '.local', 'share', 'Hytale')
+    // XDG Base Directory spec: use XDG_DATA_HOME if set, otherwise fall back to ~/.local/share
+    const xdgDataHome = process.env.XDG_DATA_HOME || path.join(process.env.HOME || '', '.local', 'share')
+    return path.join(xdgDataHome, 'Hytale')
   }
 }
 
