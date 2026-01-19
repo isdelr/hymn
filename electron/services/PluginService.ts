@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { pathExists, ensureDir } from '../utils/fileSystem'
+import { pathExists, ensureDir, setExecutablePermission } from '../utils/fileSystem'
 import { getProjectsRoot } from '../core/paths'
 import { readSetting, SETTINGS_KEYS } from '../core/database'
 import {
@@ -98,18 +98,12 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
     'utf-8'
   )
 
-  // gradlew (Unix)
-  await fs.writeFile(
-    path.join(pluginPath, 'gradlew'),
-    generateGradlew(),
-    'utf-8'
-  )
-  // Make gradlew executable on Unix systems
-  try {
-    await fs.chmod(path.join(pluginPath, 'gradlew'), 0o755)
-  } catch {
-    // Ignore chmod errors on Windows
-  }
+  // gradlew (Unix) - ensure LF line endings for Unix compatibility
+  const gradlewPath = path.join(pluginPath, 'gradlew')
+  const gradlewContent = generateGradlew().replace(/\r\n/g, '\n')
+  await fs.writeFile(gradlewPath, gradlewContent, 'utf-8')
+  // Make gradlew executable on Unix systems (no-op on Windows)
+  await setExecutablePermission(gradlewPath)
 
   // gradlew.bat (Windows)
   await fs.writeFile(

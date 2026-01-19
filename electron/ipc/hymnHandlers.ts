@@ -2,6 +2,35 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { pathExists } from '../utils/fileSystem'
+
+// Simple in-memory cache for frequently accessed IPC data
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+const ipcCache = new Map<string, CacheEntry<unknown>>()
+
+function getCached<T>(key: string, ttlMs: number): T | null {
+  const entry = ipcCache.get(key) as CacheEntry<T> | undefined
+  if (entry && Date.now() - entry.timestamp < ttlMs) {
+    return entry.data
+  }
+  ipcCache.delete(key)
+  return null
+}
+
+function setCache<T>(key: string, data: T): void {
+  ipcCache.set(key, { data, timestamp: Date.now() })
+}
+
+function invalidateCache(keyPrefix: string): void {
+  for (const key of ipcCache.keys()) {
+    if (key.startsWith(keyPrefix)) {
+      ipcCache.delete(key)
+    }
+  }
+}
 import { resolveInstallInfo, setInstallPathOverride } from '../services/InstallService'
 import {
   getProfilesState,
@@ -118,9 +147,23 @@ import type {
   SelectAssetFileResult,
 } from '../../src/shared/hymn-types'
 
+// Cache TTL constants (in milliseconds)
+const CACHE_TTL = {
+  INSTALL_INFO: 5000, // 5 seconds
+  DEPENDENCIES: 10000, // 10 seconds
+} as const
+
 export function registerHymnHandlers(): void {
-  // Install info
-  ipcMain.handle('hymn:get-install-info', async () => resolveInstallInfo())
+  // Install info (cached for 5 seconds)
+  ipcMain.handle('hymn:get-install-info', async () => {
+    const cacheKey = 'install-info'
+    const cached = getCached<Awaited<ReturnType<typeof resolveInstallInfo>>>(cacheKey, CACHE_TTL.INSTALL_INFO)
+    if (cached) return cached
+
+    const result = await resolveInstallInfo()
+    setCache(cacheKey, result)
+    return result
+  })
 
   ipcMain.handle('hymn:select-install-path', async () => {
     const result = await dialog.showOpenDialog({
@@ -133,6 +176,8 @@ export function registerHymnHandlers(): void {
     }
 
     await setInstallPathOverride(result.filePaths[0])
+    // Invalidate cached install info since path changed
+    invalidateCache('install-info')
     return resolveInstallInfo()
   })
 
@@ -297,8 +342,16 @@ export function registerHymnHandlers(): void {
       renameJavaPackage(options),
   )
 
-  // Build workflow handlers
-  ipcMain.handle('hymn:check-dependencies', async () => checkDependencies())
+  // Build workflow handlers (dependencies check cached for 10 seconds)
+  ipcMain.handle('hymn:check-dependencies', async () => {
+    const cacheKey = 'dependencies-status'
+    const cached = getCached<Awaited<ReturnType<typeof checkDependencies>>>(cacheKey, CACHE_TTL.DEPENDENCIES)
+    if (cached) return cached
+
+    const result = await checkDependencies()
+    setCache(cacheKey, result)
+    return result
+  })
   ipcMain.handle('hymn:build-plugin', async (_event, options: BuildPluginOptions) => buildPlugin(options))
   ipcMain.handle('hymn:build-pack', async (_event, options: BuildPackOptions) => buildPack(options))
   ipcMain.handle('hymn:list-build-artifacts', async () => listBuildArtifacts())

@@ -47,7 +47,19 @@ const PRODUCTION_CSP = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
+  "block-all-mixed-content",
 ].join('; ')
+
+// Allowed domains for external links
+const ALLOWED_EXTERNAL_DOMAINS = new Set([
+  'github.com',
+  'hytale.com',
+  'hypixelstudios.com',
+  'discord.gg',
+  'discord.com',
+  'docs.hytale.com',
+])
 
 /**
  * Set up Content Security Policy headers.
@@ -127,7 +139,24 @@ function createWindow(): void {
   // Control new window creation - open external links in browser
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
-      shell.openExternal(url)
+      try {
+        const parsedUrl = new URL(url)
+        const hostname = parsedUrl.hostname
+
+        // Check if domain or parent domain is in allowlist
+        const isAllowed = ALLOWED_EXTERNAL_DOMAINS.has(hostname) ||
+          Array.from(ALLOWED_EXTERNAL_DOMAINS).some(
+            (domain) => hostname.endsWith(`.${domain}`)
+          )
+
+        if (isAllowed) {
+          shell.openExternal(url)
+        } else {
+          console.warn(`Blocked external link to unallowed domain: ${hostname}`)
+        }
+      } catch {
+        console.warn(`Invalid URL blocked: ${url}`)
+      }
     }
     return { action: 'deny' }
   })

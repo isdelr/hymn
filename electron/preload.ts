@@ -1,6 +1,28 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions } from '../src/shared/hymn-types'
 
+// Input validation helpers for preload security
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isValidPath(value: unknown): value is string {
+  if (!isNonEmptyString(value)) return false
+  // Block null bytes which could bypass path validation
+  if (value.includes('\0')) return false
+  return true
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validateOrThrow(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(`Validation failed: ${message}`)
+  }
+}
+
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
@@ -59,11 +81,27 @@ const api: HymnApi = {
   uninstallProject: (options) => ipcRenderer.invoke('hymn:uninstall-project', options),
   // Package mod (zip creation)
   packageMod: (options) => ipcRenderer.invoke('hymn:package-mod', options),
-  openInExplorer: (path: string) => ipcRenderer.invoke('hymn:open-in-explorer', path),
-  listProjectFiles: (options) => ipcRenderer.invoke('hymn:list-project-files', options),
-  readFile: (path: string) => ipcRenderer.invoke('hymn:read-file', path),
-  saveFile: (path: string, content: string) => ipcRenderer.invoke('hymn:save-file', path, content),
-  checkPathExists: (path: string) => ipcRenderer.invoke('hymn:check-path-exists', path),
+  openInExplorer: (path: string) => {
+    validateOrThrow(isValidPath(path), 'Invalid path for openInExplorer')
+    return ipcRenderer.invoke('hymn:open-in-explorer', path)
+  },
+  listProjectFiles: (options) => {
+    validateOrThrow(isObject(options), 'Invalid options for listProjectFiles')
+    return ipcRenderer.invoke('hymn:list-project-files', options)
+  },
+  readFile: (path: string) => {
+    validateOrThrow(isValidPath(path), 'Invalid path for readFile')
+    return ipcRenderer.invoke('hymn:read-file', path)
+  },
+  saveFile: (path: string, content: string) => {
+    validateOrThrow(isValidPath(path), 'Invalid path for saveFile')
+    validateOrThrow(typeof content === 'string', 'Invalid content for saveFile')
+    return ipcRenderer.invoke('hymn:save-file', path, content)
+  },
+  checkPathExists: (path: string) => {
+    validateOrThrow(isValidPath(path), 'Invalid path for checkPathExists')
+    return ipcRenderer.invoke('hymn:check-path-exists', path)
+  },
   selectAssetFile: (options: SelectAssetFileOptions) => ipcRenderer.invoke('hymn:select-asset-file', options),
   // Java source file management for plugins
   listJavaSources: (options) => ipcRenderer.invoke('hymn:list-java-sources', options),
@@ -83,7 +121,10 @@ const api: HymnApi = {
   copyArtifactToMods: (artifactId) => ipcRenderer.invoke('hymn:copy-artifact-to-mods', artifactId),
   listInstalledMods: () => ipcRenderer.invoke('hymn:list-installed-mods'),
   openBuildsFolder: () => ipcRenderer.invoke('hymn:open-builds-folder'),
-  openInEditor: (path: string) => ipcRenderer.invoke('hymn:open-in-editor', path),
+  openInEditor: (path: string) => {
+    validateOrThrow(isValidPath(path), 'Invalid path for openInEditor')
+    return ipcRenderer.invoke('hymn:open-in-editor', path)
+  },
   // Deleted mods management
   listDeletedMods: () => ipcRenderer.invoke('hymn:list-deleted-mods'),
   restoreDeletedMod: (options: RestoreDeletedModOptions) => ipcRenderer.invoke('hymn:restore-deleted-mod', options),

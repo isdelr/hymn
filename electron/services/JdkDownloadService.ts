@@ -2,10 +2,28 @@ import fs from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import { BrowserWindow } from 'electron'
-// @ts-expect-error - tar has no type declarations
-import tar from 'tar'
-import yauzl from 'yauzl'
+import type { ZipFile, Entry } from 'yauzl'
 import { pathExists, ensureDir, removePath } from '../utils/fileSystem'
+
+// Lazy-loaded modules for better startup performance
+// @ts-expect-error - tar has no type declarations
+let tarModule: typeof import('tar') | null = null
+let yauzlModule: typeof import('yauzl') | null = null
+
+async function getTar() {
+  if (!tarModule) {
+    // @ts-expect-error - tar has no type declarations
+    tarModule = await import('tar')
+  }
+  return tarModule
+}
+
+async function getYauzl() {
+  if (!yauzlModule) {
+    yauzlModule = await import('yauzl')
+  }
+  return yauzlModule
+}
 import { getJdkInstallDir } from '../core/paths'
 import { writeSetting, SETTINGS_KEYS } from '../core/database'
 import type { JdkDownloadResult } from '../../src/shared/hymn-types'
@@ -48,8 +66,10 @@ function getJdkDownloadUrl(): string {
 }
 
 async function extractZip(zipPath: string, destDir: string): Promise<void> {
+  const yauzl = await getYauzl()
+
   return new Promise((resolve, reject) => {
-    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+    yauzl.open(zipPath, { lazyEntries: true }, (err: Error | null, zipfile: ZipFile | undefined) => {
       if (err || !zipfile) {
         reject(err || new Error('Failed to open zip'))
         return
@@ -57,7 +77,7 @@ async function extractZip(zipPath: string, destDir: string): Promise<void> {
 
       zipfile.readEntry()
 
-      zipfile.on('entry', async (entry) => {
+      zipfile.on('entry', async (entry: Entry) => {
         // Strip the first directory component (jdk-XX/)
         const parts = entry.fileName.split('/')
         if (parts.length > 1) {
@@ -102,6 +122,7 @@ async function extractZip(zipPath: string, destDir: string): Promise<void> {
 }
 
 async function extractTarGz(tarPath: string, destDir: string): Promise<void> {
+  const tar = await getTar()
   await tar.extract({
     file: tarPath,
     cwd: destDir,

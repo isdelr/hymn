@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { constants } from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -131,4 +132,72 @@ export function normalizeRelativePath(targetPath: string): string {
  */
 export function normalizeRelativeInput(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\/+/, '').trim()
+}
+
+/**
+ * Set executable permission on a file (755 on Unix, no-op on Windows).
+ * Returns true if successful, false if permission setting was not needed or failed gracefully.
+ */
+export async function setExecutablePermission(filePath: string): Promise<boolean> {
+  // On Windows, chmod is not needed - executability is determined by file extension
+  if (process.platform === 'win32') {
+    return true
+  }
+
+  try {
+    await fs.chmod(filePath, 0o755)
+    return true
+  } catch (error) {
+    // Log but don't throw - permission issues on some systems shouldn't break functionality
+    console.warn(`Failed to set executable permission on ${filePath}:`, error)
+    return false
+  }
+}
+
+/**
+ * Check file access with specific mode flags.
+ * @param filePath - Path to the file
+ * @param mode - Access mode (use fs.constants.R_OK, W_OK, X_OK)
+ * @returns true if access is granted, false otherwise
+ */
+export async function checkFileAccess(
+  filePath: string,
+  mode: number = constants.R_OK
+): Promise<boolean> {
+  try {
+    await fs.access(filePath, mode)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * File access mode constants for cross-platform use.
+ */
+export const FileAccessMode = {
+  /** File is visible (exists) */
+  EXISTS: constants.F_OK,
+  /** File can be read */
+  READ: constants.R_OK,
+  /** File can be written */
+  WRITE: constants.W_OK,
+  /** File can be executed */
+  EXECUTE: constants.X_OK,
+} as const
+
+/**
+ * Compare two paths for equality, respecting OS case sensitivity.
+ * Linux is case-sensitive, Windows and macOS are case-insensitive.
+ */
+export function pathsEqual(path1: string, path2: string): boolean {
+  const normalized1 = path.resolve(path1)
+  const normalized2 = path.resolve(path2)
+
+  // Linux is case-sensitive, Windows and macOS are case-insensitive
+  if (process.platform === 'linux') {
+    return normalized1 === normalized2
+  }
+
+  return normalized1.toLowerCase() === normalized2.toLowerCase()
 }

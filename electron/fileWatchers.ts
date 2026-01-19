@@ -12,8 +12,33 @@ interface WatcherEntry {
 
 // Debounce timers for each directory type
 const debounceTimers: Map<string, NodeJS.Timeout> = new Map()
-const DEBOUNCE_MS = 300
-const PROJECT_DEBOUNCE_MS = 100
+
+// Debounce configuration per watcher type (in ms)
+const DEBOUNCE_CONFIG = {
+  default: 300,
+  project: 100,
+  worldConfig: 250,
+  builds: 500, // Builds can have many rapid changes during compilation
+} as const
+
+// Common ignore patterns for file watchers
+const COMMON_IGNORE_PATTERNS = [
+  '**/node_modules/**',
+  '**/.git/**',
+  '**/.gradle/**',
+  '**/build/**',
+  '**/out/**',
+  '**/.idea/**',
+  '**/.vscode/**',
+  '**/run/**',
+  '**/*.class',
+  '**/*.jar',
+  '**/.DS_Store',
+  '**/Thumbs.db',
+]
+
+const DEBOUNCE_MS = DEBOUNCE_CONFIG.default
+const PROJECT_DEBOUNCE_MS = DEBOUNCE_CONFIG.project
 
 export class WatcherManager {
   private watchers: Map<string, WatcherEntry> = new Map()
@@ -50,8 +75,9 @@ export class WatcherManager {
     const watcher = chokidar.watch(paths, {
       ignoreInitial: true,
       depth: 5,
+      ignored: COMMON_IGNORE_PATTERNS,
       awaitWriteFinish: {
-        stabilityThreshold: 1000,
+        stabilityThreshold: type === 'builds' ? 2000 : 1000,
         pollInterval: 100
       },
     })
@@ -279,6 +305,7 @@ export class WatcherManager {
       const watcher = chokidar.watch(projectPath, {
         ignoreInitial: true,
         depth: 5,
+        ignored: COMMON_IGNORE_PATTERNS,
         awaitWriteFinish: {
           stabilityThreshold: 1000,
           pollInterval: 100
