@@ -47,7 +47,9 @@
       "Bash(npm run:*)",
       "Bash(bun install:*)",
       "Bash(bun run typecheck:*)",
-      "Bash(bun --version:*)"
+      "Bash(bun --version:*)",
+      "Bash(npm exec:*)",
+      "WebFetch(domain:www.electronjs.org)"
     ]
   }
 }

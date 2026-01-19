@@ -53,4 +53,8 @@ export const queryKeys = {
     dependencies: ['builds', 'dependencies'] as const,
     installedMods: ['builds', 'installedMods'] as const,
   },
+
+  deletedMods: {
+    all: ['deletedMods'] as const,
+  },
 }

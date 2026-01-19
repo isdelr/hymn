@@ -15,10 +15,9 @@ export function FileWatcherProvider({ children }: FileWatcherProviderProps) {
 
   useEffect(() => {
     // Start mods watcher when install info is available
-    if (installInfo?.modsPath || installInfo?.packsPath || installInfo?.earlyPluginsPath) {
+    if (installInfo?.modsPath || installInfo?.earlyPluginsPath) {
       window.hymnFileWatcher.startModsWatcher(
         installInfo.modsPath,
-        installInfo.packsPath,
         installInfo.earlyPluginsPath
       )
     }
@@ -27,7 +26,20 @@ export function FileWatcherProvider({ children }: FileWatcherProviderProps) {
       // Stop mods watcher on unmount or when paths change
       window.hymnFileWatcher.stopModsWatcher()
     }
-  }, [installInfo?.modsPath, installInfo?.packsPath, installInfo?.earlyPluginsPath])
+  }, [installInfo?.modsPath, installInfo?.earlyPluginsPath])
+
+  // Start world config watcher to detect external mod toggles
+  useEffect(() => {
+    if (installInfo?.userDataPath) {
+      // Construct savesPath from userDataPath
+      const savesPath = `${installInfo.userDataPath}/Saves`
+      window.hymnFileWatcher.startWorldConfigWatcher(savesPath)
+    }
+
+    return () => {
+      window.hymnFileWatcher.stopWorldConfigWatcher()
+    }
+  }, [installInfo?.userDataPath])
 
   return <>{children}</>
 }

@@ -256,6 +256,21 @@ export interface ModEntry {
   size?: number // File/folder size in bytes
 }
 
+// Dependency validation types
+export interface DependencyIssue {
+  modId: string
+  modName: string
+  type: 'missing_dependency' | 'disabled_dependency' | 'optional_missing'
+  dependencyId: string
+  message: string
+}
+
+export interface ModValidationResult {
+  issues: DependencyIssue[]
+  hasErrors: boolean
+  hasWarnings: boolean
+}
+
 export interface Profile {
   id: string
   name: string
@@ -279,7 +294,6 @@ export interface InstallInfo {
   activePath: string | null
   userDataPath: string | null
   modsPath: string | null
-  packsPath: string | null
   earlyPluginsPath: string | null
   issues: string[]
 }
@@ -287,6 +301,7 @@ export interface InstallInfo {
 export interface ScanResult {
   installPath: string | null
   entries: ModEntry[]
+  validation?: ModValidationResult
 }
 
 export interface PackManifest {
@@ -480,6 +495,30 @@ export interface DeleteModResult {
   backupPath: string
 }
 
+// Deleted mods backup types
+export interface DeletedModEntry {
+  id: string
+  originalName: string
+  backupPath: string
+  deletedAt: string
+  size: number
+  format: ModFormat
+}
+
+export interface ListDeletedModsResult {
+  entries: DeletedModEntry[]
+}
+
+export interface RestoreDeletedModOptions {
+  backupId: string
+  targetLocation: ModLocation
+}
+
+export interface RestoreDeletedModResult {
+  success: boolean
+  restoredPath: string
+}
+
 export interface AddModResult {
   success: boolean
   addedPaths: string[]
@@ -625,6 +664,18 @@ export interface DeleteProjectResult {
   error?: string
 }
 
+// Asset file picker types
+export interface SelectAssetFileOptions {
+  defaultPath: string // Starting directory for the file picker
+  modRoot: string // Root path of the mod, used to compute relative path
+  filters?: Array<{ name: string; extensions: string[] }> // File type filters
+  title?: string // Dialog title
+}
+
+export interface SelectAssetFileResult {
+  relativePath: string | null // Relative path from modRoot, or null if canceled
+}
+
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
@@ -674,6 +725,7 @@ export interface HymnApi {
   readFile: (path: string) => Promise<string>
   saveFile: (path: string, content: string) => Promise<{ success: boolean }>
   checkPathExists: (path: string) => Promise<boolean>
+  selectAssetFile: (options: SelectAssetFileOptions) => Promise<SelectAssetFileResult>
   // Java source file management for plugins
   listJavaSources: (options: ListJavaSourcesOptions) => Promise<ListJavaSourcesResult>
   createJavaClass: (options: CreateJavaClassOptions) => Promise<CreateJavaClassResult>
@@ -694,6 +746,11 @@ export interface HymnApi {
   openBuildsFolder: () => Promise<void>
   // Open file/folder in default editor (uses OS "Open With" dialog)
   openInEditor: (path: string) => Promise<void>
+  // Deleted mods management
+  listDeletedMods: () => Promise<ListDeletedModsResult>
+  restoreDeletedMod: (options: RestoreDeletedModOptions) => Promise<RestoreDeletedModResult>
+  permanentlyDeleteMod: (options: { backupId: string }) => Promise<{ success: boolean }>
+  clearDeletedMods: () => Promise<{ success: boolean; deletedCount: number }>
 }
 
 // Window control API for frameless window
@@ -765,16 +822,25 @@ export interface DirectoryChangeEvent {
   path: string
 }
 
+// World config watcher type (for external mod toggle detection)
+export interface WorldConfigChangeEvent {
+  worldId: string
+}
+
 export interface HymnFileWatcherApi {
   watchProject: (projectPath: string) => Promise<WatchProjectResult>
   unwatchProject: () => Promise<{ success: boolean }>
   onFileChange: (callback: (event: FileChangeEvent) => void) => () => void
   // Directory watcher methods
-  startModsWatcher: (modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) => Promise<void>
+  startModsWatcher: (modsPath: string | null, earlyPluginsPath: string | null) => Promise<void>
   stopModsWatcher: () => Promise<void>
   onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
   onBuildsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
   onModsChange: (callback: (event: DirectoryChangeEvent) => void) => () => void
+  // World config watcher methods
+  startWorldConfigWatcher: (savesPath: string) => Promise<void>
+  stopWorldConfigWatcher: () => Promise<void>
+  onWorldConfigChange: (callback: (event: WorldConfigChangeEvent) => void) => () => void
 }
 
 // Global window augmentation

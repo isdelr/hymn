@@ -13,7 +13,8 @@ import {
     Check,
     FileX,
     Loader2,
-    ExternalLink
+    ExternalLink,
+    FolderOpen
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -281,6 +282,12 @@ function ItemEditor({ data, updateField, modRoot }: { data: AssetData | null, up
                             onChange={e => updateField('Icon', e)}
                             modRoot={modRoot}
                             placeholder="textures/icons/..."
+                            suggestedFolder="textures/icons"
+                            filters={[
+                                { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'tga', 'dds'] },
+                                { name: 'All Files', extensions: ['*'] },
+                            ]}
+                            title="Select Icon"
                         />
                     </div>
                     <div className="space-y-1">
@@ -290,6 +297,12 @@ function ItemEditor({ data, updateField, modRoot }: { data: AssetData | null, up
                             onChange={e => updateField('Model', e)}
                             modRoot={modRoot}
                             placeholder="models/items/..."
+                            suggestedFolder="models/items"
+                            filters={[
+                                { name: 'Blocky Models', extensions: ['blockymodel'] },
+                                { name: 'All Files', extensions: ['*'] },
+                            ]}
+                            title="Select Model"
                         />
                     </div>
                 </div>
@@ -394,7 +407,18 @@ function EntityEditor({ data, updateField, modRoot }: { data: AssetData | null, 
                     </div>
                     <div className="space-y-1">
                         <Label>Model Path</Label>
-                        <PathInput value={data?.Character?.Model || ''} onChange={e => updateField('Character.Model', e)} modRoot={modRoot} />
+                        <PathInput
+                            value={data?.Character?.Model || ''}
+                            onChange={e => updateField('Character.Model', e)}
+                            modRoot={modRoot}
+                            placeholder="models/entities/..."
+                            suggestedFolder="models/entities"
+                            filters={[
+                                { name: 'Blocky Models', extensions: ['blockymodel'] },
+                                { name: 'All Files', extensions: ['*'] },
+                            ]}
+                            title="Select Entity Model"
+                        />
                     </div>
                     <div className="space-y-1">
                         <Label>Scale</Label>
@@ -428,8 +452,21 @@ function Label({ children }: { children: React.ReactNode }) {
     return <label className="text-[10px] font-bold uppercase text-muted-foreground block mb-1">{children}</label>
 }
 
-// Path Input Component with validation feedback
-function PathInput(props: { value: string, onChange: (val: string) => void, modRoot: string | null, placeholder?: string }) {
+// Path Input Component with validation feedback and file picker
+interface PathInputProps {
+    value: string
+    onChange: (val: string) => void
+    modRoot: string | null
+    placeholder?: string
+    /** Suggested subfolder relative to modRoot (e.g., "textures/icons") */
+    suggestedFolder?: string
+    /** File type filters for the picker */
+    filters?: Array<{ name: string; extensions: string[] }>
+    /** Dialog title */
+    title?: string
+}
+
+function PathInput(props: PathInputProps) {
     const [isValid, setIsValid] = useState<boolean | null>(null)
     const [isChecking, setIsChecking] = useState(false)
     const [checkedPath, setCheckedPath] = useState<string | null>(null)
@@ -476,23 +513,75 @@ function PathInput(props: { value: string, onChange: (val: string) => void, modR
         return () => clearTimeout(timeout)
     }, [props.value, props.modRoot])
 
+    const handleBrowse = async () => {
+        if (!props.modRoot) return
+
+        // Compute the starting directory
+        const normalizedRoot = props.modRoot.replace(/\\/g, '/')
+        let defaultPath = normalizedRoot
+
+        // If there's a current value, try to start from its parent directory
+        if (props.value) {
+            const normalizedValue = props.value.replace(/\\/g, '/')
+            const parentDir = normalizedValue.includes('/')
+                ? normalizedValue.substring(0, normalizedValue.lastIndexOf('/'))
+                : ''
+            if (parentDir) {
+                defaultPath = normalizedRoot + '/' + parentDir
+            }
+        } else if (props.suggestedFolder) {
+            // Otherwise use the suggested folder
+            defaultPath = normalizedRoot + '/' + props.suggestedFolder.replace(/\\/g, '/')
+        }
+
+        try {
+            const result = await window.hymn.selectAssetFile({
+                defaultPath,
+                modRoot: normalizedRoot,
+                filters: props.filters,
+                title: props.title,
+            })
+
+            if (result.relativePath) {
+                props.onChange(result.relativePath)
+            }
+        } catch (err) {
+            console.error('Failed to open file picker:', err)
+        }
+    }
+
     return (
         <div className="relative group">
-            <input
-                className={cn(
-                    "w-full bg-muted/30 border rounded-lg pl-3 pr-10 py-2 text-sm font-mono",
-                    "focus:outline-none focus:ring-2 focus:bg-background transition-all duration-200",
-                    isValid === null && "focus:ring-primary/50",
-                    isValid === false && "border-destructive/60 focus:ring-destructive/50 bg-destructive/5",
-                    isValid === true && "border-emerald-500/40 focus:ring-emerald-500/50 bg-emerald-500/5"
-                )}
-                value={props.value}
-                onChange={(e) => props.onChange(e.target.value)}
-                placeholder={props.placeholder}
-            />
+            <div className="flex gap-2">
+                <input
+                    className={cn(
+                        "flex-1 bg-muted/30 border rounded-lg pl-3 pr-10 py-2 text-sm font-mono",
+                        "focus:outline-none focus:ring-2 focus:bg-background transition-all duration-200",
+                        isValid === null && "focus:ring-primary/50",
+                        isValid === false && "border-destructive/60 focus:ring-destructive/50 bg-destructive/5",
+                        isValid === true && "border-emerald-500/40 focus:ring-emerald-500/50 bg-emerald-500/5"
+                    )}
+                    value={props.value}
+                    onChange={(e) => props.onChange(e.target.value)}
+                    placeholder={props.placeholder}
+                />
+                <button
+                    type="button"
+                    onClick={handleBrowse}
+                    disabled={!props.modRoot}
+                    className={cn(
+                        "px-3 py-2 rounded-lg border bg-muted/30 transition-colors",
+                        "hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                    title="Browse for file"
+                >
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                </button>
+            </div>
 
             {/* Status indicator */}
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <div className="absolute right-14 top-1/2 -translate-y-1/2 pointer-events-none">
                 {isChecking && (
                     <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
                 )}
@@ -560,7 +649,7 @@ interface ComponentCardProps {
 
 function ComponentCard({ title, icon: Icon, description, children }: ComponentCardProps) {
     return (
-        <div className="bg-card/40 rounded-2xl overflow-hidden">
+        <div className="bg-card/40 rounded-2xl">
             <div className="p-4 bg-muted/20 border-b flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-primary/10">

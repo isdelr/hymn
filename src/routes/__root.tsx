@@ -1,6 +1,6 @@
 import {useEffect} from 'react'
 import {createRootRoute, Outlet, Link, useRouterState} from '@tanstack/react-router'
-import {Boxes, Settings, Sparkles} from 'lucide-react'
+import {Boxes, Settings, Sparkles, HelpCircle} from 'lucide-react'
 import {TitleBar} from '@/components/ui/TitleBar'
 import {cn} from '@/lib/utils'
 import type {ThemeMode} from '@/shared/hymn-types'
@@ -23,6 +23,12 @@ const sections = [
         label: 'Settings',
         description: 'Configure paths and preferences',
         icon: Settings,
+    },
+    {
+        to: '/help' as const,
+        label: 'Help',
+        description: 'Learn how to use Hymn',
+        icon: HelpCircle,
     },
 ]
 
@@ -74,7 +80,7 @@ function RootLayout() {
             <div className="relative flex flex-1 overflow-hidden">
                 {/* Sidebar Navigation */}
                 <aside
-                    className="flex w-16 flex-col items-center border-r border-border/30 bg-sidebar/80 backdrop-blur-sm py-4">
+                    className="relative z-10 flex w-16 flex-col items-center border-r border-border/30 bg-sidebar/80 backdrop-blur-sm py-4">
                     {/* Navigation Items */}
                     <nav className="flex flex-1 flex-col items-center gap-2">
                         {sections.map((section) => {

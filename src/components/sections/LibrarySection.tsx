@@ -103,7 +103,6 @@ export function LibrarySection() {
             <Separator />
             <div className="grid gap-2 text-xs text-muted-foreground">
               <p>Default path: {installInfo?.defaultPath ?? '—'}</p>
-              <p>Packs path: {installInfo?.packsPath ?? 'Not found'}</p>
               <p>Mods path: {installInfo?.modsPath ?? 'Not found'}</p>
               <p>Early plugins: {installInfo?.earlyPluginsPath ?? 'Not found'}</p>
             </div>

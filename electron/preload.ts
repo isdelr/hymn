@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, JdkDownloadProgress, GradleVersion } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions } from '../src/shared/hymn-types'
 
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -64,6 +64,7 @@ const api: HymnApi = {
   readFile: (path: string) => ipcRenderer.invoke('hymn:read-file', path),
   saveFile: (path: string, content: string) => ipcRenderer.invoke('hymn:save-file', path, content),
   checkPathExists: (path: string) => ipcRenderer.invoke('hymn:check-path-exists', path),
+  selectAssetFile: (options: SelectAssetFileOptions) => ipcRenderer.invoke('hymn:select-asset-file', options),
   // Java source file management for plugins
   listJavaSources: (options) => ipcRenderer.invoke('hymn:list-java-sources', options),
   createJavaClass: (options) => ipcRenderer.invoke('hymn:create-java-class', options),
@@ -83,6 +84,11 @@ const api: HymnApi = {
   listInstalledMods: () => ipcRenderer.invoke('hymn:list-installed-mods'),
   openBuildsFolder: () => ipcRenderer.invoke('hymn:open-builds-folder'),
   openInEditor: (path: string) => ipcRenderer.invoke('hymn:open-in-editor', path),
+  // Deleted mods management
+  listDeletedMods: () => ipcRenderer.invoke('hymn:list-deleted-mods'),
+  restoreDeletedMod: (options: RestoreDeletedModOptions) => ipcRenderer.invoke('hymn:restore-deleted-mod', options),
+  permanentlyDeleteMod: (options: { backupId: string }) => ipcRenderer.invoke('hymn:permanently-delete-mod', options),
+  clearDeletedMods: () => ipcRenderer.invoke('hymn:clear-deleted-mods'),
 }
 
 const themeApi: HymnThemeApi = {
@@ -140,8 +146,8 @@ const fileWatcherApi: HymnFileWatcherApi = {
     }
   },
   // Directory watcher methods
-  startModsWatcher: (modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) =>
-    ipcRenderer.invoke('hymn:start-mods-watcher', modsPath, packsPath, earlyPluginsPath),
+  startModsWatcher: (modsPath: string | null, earlyPluginsPath: string | null) =>
+    ipcRenderer.invoke('hymn:start-mods-watcher', modsPath, earlyPluginsPath),
   stopModsWatcher: () => ipcRenderer.invoke('hymn:stop-mods-watcher'),
   onProjectsChange: (callback: (event: DirectoryChangeEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, changeEvent: DirectoryChangeEvent) => callback(changeEvent)
@@ -162,6 +168,17 @@ const fileWatcherApi: HymnFileWatcherApi = {
     ipcRenderer.on('directory:mods-changed', handler)
     return () => {
       ipcRenderer.removeListener('directory:mods-changed', handler)
+    }
+  },
+  // World config watcher methods
+  startWorldConfigWatcher: (savesPath: string) =>
+    ipcRenderer.invoke('hymn:start-world-config-watcher', savesPath),
+  stopWorldConfigWatcher: () => ipcRenderer.invoke('hymn:stop-world-config-watcher'),
+  onWorldConfigChange: (callback: (event: WorldConfigChangeEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changeEvent: WorldConfigChangeEvent) => callback(changeEvent)
+    ipcRenderer.on('world:config-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('world:config-changed', handler)
     }
   },
 }

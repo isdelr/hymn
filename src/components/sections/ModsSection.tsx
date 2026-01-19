@@ -15,6 +15,9 @@ import {
   PackagePlus,
   Download,
   Upload,
+  CheckCircle2,
+  XCircle,
+  MinusCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -44,10 +47,11 @@ import {
 } from '@/components/ui/tooltip'
 import { typeLabels, formatLabels, locationLabels } from '@/shared/labels'
 import { cn } from '@/lib/utils'
-import type { ModEntry } from '@/shared/hymn-types'
+import type { ModEntry, DependencyIssue } from '@/shared/hymn-types'
+import { DeletedModsDialog } from '@/components/dialogs/DeletedModsDialog'
 
 // React Query hooks
-import { useInstallInfo, useWorlds, useMods } from '@/hooks/queries'
+import { useInstallInfo, useWorlds, useMods, useDeletedMods } from '@/hooks/queries'
 import {
   useToggleMod,
   useDeleteMod,
@@ -116,6 +120,7 @@ export function ModsSection() {
   const { data: worldsState } = useWorlds(!!installInfo?.activePath)
   const selectedWorldId = worldsState?.selectedWorldId ?? null
   const { data: scanResult, isLoading: isScanning } = useMods(selectedWorldId)
+  const { data: deletedMods = [] } = useDeletedMods()
 
   // Mutations
   const toggleMod = useToggleMod()
@@ -127,6 +132,7 @@ export function ModsSection() {
 
   const [filter, setFilter] = useState('')
   const [modToDelete, setModToDelete] = useState<ModEntry | null>(null)
+  const [showDeletedModsDialog, setShowDeletedModsDialog] = useState(false)
 
   // Derived state
   const isTogglingMod = toggleMod.isPending || deleteMod.isPending || addMods.isPending || selectWorld.isPending
@@ -146,6 +152,23 @@ export function ModsSection() {
         .some((value) => value?.toLowerCase().includes(lowered))
     })
   }, [filter, scanResult])
+
+  // Build a map of mod issues for quick lookup
+  const modIssuesMap = useMemo(() => {
+    const map = new Map<string, DependencyIssue[]>()
+    const issues = scanResult?.validation?.issues ?? []
+    for (const issue of issues) {
+      const existing = map.get(issue.modId) ?? []
+      existing.push(issue)
+      map.set(issue.modId, existing)
+    }
+    return map
+  }, [scanResult?.validation?.issues])
+
+  // Build a set of installed mod IDs for dependency status
+  const installedModIds = useMemo(() => {
+    return new Set((scanResult?.entries ?? []).map((e) => e.id))
+  }, [scanResult?.entries])
 
   const handleDeleteMod = async () => {
     if (!modToDelete) return
@@ -209,26 +232,54 @@ export function ModsSection() {
           </div>
         )}
 
-        {/* Export/Import Buttons */}
+        {/* Export/Import/Trash Buttons */}
         <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExportWorldMods}
-            disabled={exportWorldMods.isPending || importWorldMods.isPending || !selectedWorld || isScanning}
-            className="h-8 w-8"
-          >
-            <Download className={cn("h-4 w-4", exportWorldMods.isPending && "animate-pulse")} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleImportWorldMods}
-            disabled={exportWorldMods.isPending || importWorldMods.isPending || isScanning || !installInfo?.activePath}
-            className="h-8 w-8"
-          >
-            <Upload className={cn("h-4 w-4", importWorldMods.isPending && "animate-pulse")} />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleExportWorldMods}
+                disabled={exportWorldMods.isPending || importWorldMods.isPending || !selectedWorld || isScanning}
+                className="h-8 w-8"
+              >
+                <Download className={cn("h-4 w-4", exportWorldMods.isPending && "animate-pulse")} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export mods</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleImportWorldMods}
+                disabled={exportWorldMods.isPending || importWorldMods.isPending || isScanning || !installInfo?.activePath}
+                className="h-8 w-8"
+              >
+                <Upload className={cn("h-4 w-4", importWorldMods.isPending && "animate-pulse")} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Import mods</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowDeletedModsDialog(true)}
+                className="h-8 w-8 relative"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deletedMods.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+                    {deletedMods.length > 9 ? '9+' : deletedMods.length}
+                  </span>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Deleted mods ({deletedMods.length})</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -271,6 +322,36 @@ export function ModsSection() {
         </div>
       )}
 
+      {/* Dependency Issues Warning */}
+      {scanResult?.validation?.hasErrors && (
+        <div className="flex items-start gap-3 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-destructive">Missing Dependencies</p>
+            <ul className="mt-1 text-xs text-destructive/80 space-y-0.5">
+              {scanResult.validation.issues
+                .filter((issue) => issue.type === 'missing_dependency' || issue.type === 'disabled_dependency')
+                .slice(0, 3)
+                .map((issue, idx) => (
+                  <li key={idx}>
+                    <span className="font-medium">{issue.modName}</span>: requires {issue.dependencyId}
+                    {issue.type === 'disabled_dependency' && ' (disabled)'}
+                  </li>
+                ))}
+              {scanResult.validation.issues.filter(
+                (issue) => issue.type === 'missing_dependency' || issue.type === 'disabled_dependency'
+              ).length > 3 && (
+                <li className="text-destructive/60">
+                  +{scanResult.validation.issues.filter(
+                    (issue) => issue.type === 'missing_dependency' || issue.type === 'disabled_dependency'
+                  ).length - 3} more issues
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Mods Grid */}
       {visibleEntries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border/50 bg-muted/20 py-20">
@@ -298,6 +379,10 @@ export function ModsSection() {
             const colors = getModColors(entry.type)
             const ModIcon = getModIcon(entry.type)
             const canToggle = !!selectedWorld && !isTogglingMod
+            const modIssues = modIssuesMap.get(entry.id) ?? []
+            const hasIssues = modIssues.some(
+              (i) => i.type === 'missing_dependency' || i.type === 'disabled_dependency'
+            )
 
             return (
               <div
@@ -314,10 +399,32 @@ export function ModsSection() {
                   <div className="flex items-start gap-3">
                     {/* Icon */}
                     <div className={cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/50 transition-colors',
+                      'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/50 transition-colors',
                       isEnabled && 'bg-primary/10'
                     )}>
                       <ModIcon className={cn('h-5 w-5', colors.icon)} />
+                      {hasIssues && isEnabled && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive">
+                              <AlertTriangle className="h-2.5 w-2.5 text-destructive-foreground" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="text-xs font-medium mb-1">Missing Dependencies:</p>
+                            <ul className="text-xs text-muted-foreground space-y-0.5">
+                              {modIssues
+                                .filter((i) => i.type === 'missing_dependency' || i.type === 'disabled_dependency')
+                                .map((issue, idx) => (
+                                  <li key={idx}>
+                                    {issue.dependencyId}
+                                    {issue.type === 'disabled_dependency' && ' (disabled)'}
+                                  </li>
+                                ))}
+                            </ul>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
 
                     {/* Content */}
@@ -418,10 +525,35 @@ export function ModsSection() {
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs">
                           <p className="text-xs font-medium mb-1">Required Dependencies:</p>
-                          <ul className="text-xs text-muted-foreground space-y-0.5">
-                            {entry.dependencies.map((dep) => (
-                              <li key={dep}>{dep}</li>
-                            ))}
+                          <ul className="text-xs space-y-0.5">
+                            {entry.dependencies.map((dep) => {
+                              const depEntry = scanResult?.entries.find((e) => e.id === dep)
+                              const isInstalled = installedModIds.has(dep)
+                              const isDepEnabled = depEntry?.enabled ?? false
+                              let statusIcon = null
+                              let statusColor = 'text-muted-foreground'
+                              let statusText = ''
+
+                              if (!isInstalled) {
+                                statusIcon = <XCircle className="h-3 w-3 text-destructive shrink-0" />
+                                statusColor = 'text-destructive'
+                                statusText = ' (missing)'
+                              } else if (!isDepEnabled) {
+                                statusIcon = <MinusCircle className="h-3 w-3 text-amber-500 shrink-0" />
+                                statusColor = 'text-amber-500'
+                                statusText = ' (disabled)'
+                              } else {
+                                statusIcon = <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                                statusColor = 'text-emerald-500'
+                              }
+
+                              return (
+                                <li key={dep} className={cn('flex items-center gap-1', statusColor)}>
+                                  {statusIcon}
+                                  <span>{dep}{statusText}</span>
+                                </li>
+                              )
+                            })}
                           </ul>
                         </TooltipContent>
                       </Tooltip>
@@ -468,6 +600,12 @@ export function ModsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Deleted Mods Dialog */}
+      <DeletedModsDialog
+        open={showDeletedModsDialog}
+        onOpenChange={setShowDeletedModsDialog}
+      />
     </div>
   )
 }

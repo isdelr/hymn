@@ -48,3 +48,8 @@ export {
   useCancelJdkDownload,
   useClearJdkPath,
 } from './useBuildMutations'
+export {
+  useRestoreDeletedMod,
+  usePermanentlyDeleteMod,
+  useClearDeletedMods,
+} from './useDeletedModMutations'

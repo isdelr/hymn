@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from './queries/queryKeys'
-import type { DirectoryChangeEvent } from '@/shared/hymn-types'
+import type { DirectoryChangeEvent, WorldConfigChangeEvent } from '@/shared/hymn-types'
 
 export function useDirectoryWatchers() {
   const queryClient = useQueryClient()
@@ -27,10 +27,18 @@ export function useDirectoryWatchers() {
       queryClient.invalidateQueries({ queryKey: queryKeys.mods.scan(null) })
     })
 
+    // Subscribe to world config changes (external mod toggles)
+    const unsubWorldConfig = window.hymnFileWatcher.onWorldConfigChange((event: WorldConfigChangeEvent) => {
+      console.log('World config changed:', event.worldId)
+      // Invalidate the mods query for the specific world that changed
+      queryClient.invalidateQueries({ queryKey: queryKeys.mods.scan(event.worldId) })
+    })
+
     return () => {
       unsubProjects()
       unsubBuilds()
       unsubMods()
+      unsubWorldConfig()
     }
   }, [queryClient])
 }

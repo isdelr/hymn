@@ -86,7 +86,6 @@ const createFixtures = (): Fixtures => {
     activePath: 'C:\\Hytale',
     userDataPath: 'C:\\Hytale\\User',
     modsPath: 'C:\\Hytale\\mods',
-    packsPath: 'C:\\Hytale\\packs',
     earlyPluginsPath: 'C:\\Hytale\\early',
     issues: ['Permissions warning'],
   }
@@ -239,7 +238,7 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     }),
     installProject: vi.fn().mockResolvedValue({
       success: true,
-      installedPath: 'C:\\Hytale\\UserData\\Packs\\TestPack',
+      installedPath: 'C:\\Hytale\\UserData\\Mods\\TestPack',
     }),
     uninstallProject: vi.fn().mockResolvedValue({
       success: true,
@@ -290,6 +289,7 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     readFile: vi.fn().mockResolvedValue(''),
     saveFile: vi.fn().mockResolvedValue({ success: true }),
     checkPathExists: vi.fn().mockResolvedValue(true),
+    selectAssetFile: vi.fn().mockResolvedValue({ relativePath: null }),
     listJavaSources: vi.fn().mockResolvedValue({
       sources: [],
       basePackage: 'com.example',
@@ -367,6 +367,11 @@ const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {}): Hym
     }),
     openBuildsFolder: vi.fn().mockResolvedValue(undefined),
     openInEditor: vi.fn().mockResolvedValue(undefined),
+    // Deleted mods management
+    listDeletedMods: vi.fn().mockResolvedValue({ entries: [] }),
+    restoreDeletedMod: vi.fn().mockResolvedValue({ success: true, restoredPath: '' }),
+    permanentlyDeleteMod: vi.fn().mockResolvedValue({ success: true }),
+    clearDeletedMods: vi.fn().mockResolvedValue({ success: true, deletedCount: 0 }),
     deleteProject: vi.fn().mockResolvedValue({
       success: true,
     }),
@@ -387,6 +392,9 @@ const buildHymnFileWatcherApi = (): HymnFileWatcherApi => {
     onProjectsChange: vi.fn().mockReturnValue(() => {}),
     onBuildsChange: vi.fn().mockReturnValue(() => {}),
     onModsChange: vi.fn().mockReturnValue(() => {}),
+    startWorldConfigWatcher: vi.fn().mockResolvedValue(undefined),
+    stopWorldConfigWatcher: vi.fn().mockResolvedValue(undefined),
+    onWorldConfigChange: vi.fn().mockReturnValue(() => {}),
   }
   window.hymnFileWatcher = api
   return api

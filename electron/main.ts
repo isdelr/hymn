@@ -113,6 +113,17 @@ import type {
   JdkDownloadProgress,
   JdkDownloadResult,
   GradleVersion,
+  // Deleted mods types
+  DeletedModEntry,
+  ListDeletedModsResult,
+  RestoreDeletedModOptions,
+  RestoreDeletedModResult,
+  // Dependency validation types
+  DependencyIssue,
+  ModValidationResult,
+  // Asset file picker types
+  SelectAssetFileOptions,
+  SelectAssetFileResult,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -613,7 +624,6 @@ async function resolveInstallInfo(): Promise<InstallInfo> {
   const activePath = installPathOverride ?? detectedPath
   const userDataPath = activePath ? path.join(activePath, 'UserData') : null
   const modsPath = userDataPath ? path.join(userDataPath, 'Mods') : null
-  const packsPath = userDataPath ? path.join(userDataPath, 'Packs') : null
   const earlyPluginsPath = activePath ? path.join(activePath, 'earlyplugins') : null
   const issues: string[] = []
 
@@ -630,7 +640,6 @@ async function resolveInstallInfo(): Promise<InstallInfo> {
     activePath,
     userDataPath,
     modsPath: modsPath && (await pathExists(modsPath)) ? modsPath : null,
-    packsPath: packsPath && (await pathExists(packsPath)) ? packsPath : null,
     earlyPluginsPath: earlyPluginsPath && (await pathExists(earlyPluginsPath)) ? earlyPluginsPath : null,
     issues,
   }
@@ -642,10 +651,8 @@ function getLocationPath(info: InstallInfo, location: ModLocation) {
     return info.earlyPluginsPath ?? (info.activePath ? path.join(info.activePath, 'earlyplugins') : null)
   }
   if (!userDataPath) return null
-  if (location === 'mods') {
-    return info.modsPath ?? path.join(userDataPath, 'Mods')
-  }
-  return info.packsPath ?? path.join(userDataPath, 'Packs')
+  // Both 'mods' and 'packs' go to Mods folder
+  return info.modsPath ?? path.join(userDataPath, 'Mods')
 }
 
 async function readJsonFile(filePath: string) {
@@ -895,7 +902,7 @@ async function deleteMod(options: DeleteModOptions): Promise<DeleteModResult> {
   }
 
   // Safety: Verify mod path is within allowed locations
-  const allowedRoots = [info.modsPath, info.packsPath, info.earlyPluginsPath, getDisabledRoot()].filter(
+  const allowedRoots = [info.modsPath, info.earlyPluginsPath, getDisabledRoot()].filter(
     Boolean,
   ) as string[]
 
@@ -921,6 +928,197 @@ async function deleteMod(options: DeleteModOptions): Promise<DeleteModResult> {
   await removePath(options.modPath)
 
   return { success: true, backupPath }
+}
+
+// ============================================================================
+// DELETED MODS MANAGEMENT
+// ============================================================================
+
+async function listDeletedMods(): Promise<ListDeletedModsResult> {
+  const backupRoot = getDeletedModsRoot()
+
+  if (!(await pathExists(backupRoot))) {
+    return { entries: [] }
+  }
+
+  const items = await fs.readdir(backupRoot)
+  const entries: DeletedModEntry[] = []
+
+  for (const item of items) {
+    const itemPath = path.join(backupRoot, item)
+
+    try {
+      const stat = await fs.stat(itemPath)
+
+      // Parse timestamp from filename: originalName_2024-01-15T12-30-45-123Z
+      const lastUnderscoreIndex = item.lastIndexOf('_')
+      let originalName = item
+      let deletedAt = stat.mtime.toISOString()
+
+      if (lastUnderscoreIndex > 0) {
+        const possibleTimestamp = item.slice(lastUnderscoreIndex + 1)
+        // Convert back: 2024-01-15T12-30-45-123Z -> 2024-01-15T12:30:45.123Z
+        const restored = possibleTimestamp.replace(/-/g, (_match, offset) => {
+          // Keep dashes in date part (positions 4 and 7), replace others with colons/periods
+          if (offset === 4 || offset === 7) return '-'
+          if (offset === 19) return '.'
+          return ':'
+        })
+        if (!isNaN(Date.parse(restored))) {
+          originalName = item.slice(0, lastUnderscoreIndex)
+          deletedAt = restored
+        }
+      }
+
+      // Determine format
+      let format: ModFormat = 'directory'
+      if (stat.isFile()) {
+        if (item.endsWith('.jar')) format = 'jar'
+        else if (item.endsWith('.zip')) format = 'zip'
+      }
+
+      // Calculate size
+      let size = 0
+      if (stat.isFile()) {
+        size = stat.size
+      } else {
+        size = await calculateDirectorySize(itemPath)
+      }
+
+      entries.push({
+        id: item,
+        originalName,
+        backupPath: itemPath,
+        deletedAt,
+        size,
+        format,
+      })
+    } catch (err) {
+      console.error(`Failed to process deleted mod backup: ${item}`, err)
+    }
+  }
+
+  // Sort by deletion date (newest first)
+  entries.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime())
+
+  return { entries }
+}
+
+async function calculateDirectorySize(dirPath: string): Promise<number> {
+  let totalSize = 0
+
+  async function walkDir(currentPath: string) {
+    const items = await fs.readdir(currentPath, { withFileTypes: true })
+    for (const item of items) {
+      const fullPath = path.join(currentPath, item.name)
+      if (item.isDirectory()) {
+        await walkDir(fullPath)
+      } else {
+        const stat = await fs.stat(fullPath)
+        totalSize += stat.size
+      }
+    }
+  }
+
+  await walkDir(dirPath)
+  return totalSize
+}
+
+async function restoreDeletedMod(options: RestoreDeletedModOptions): Promise<RestoreDeletedModResult> {
+  const info = await resolveInstallInfo()
+
+  if (!info.activePath) {
+    throw new Error('Hytale install path not configured.')
+  }
+
+  const backupRoot = getDeletedModsRoot()
+  const backupPath = path.join(backupRoot, options.backupId)
+
+  if (!(await pathExists(backupPath))) {
+    throw new Error('Backup not found.')
+  }
+
+  // Determine target folder based on location
+  let targetFolder: string | null = null
+  switch (options.targetLocation) {
+    case 'mods':
+    case 'packs':
+      // Both mods and packs go to Mods folder
+      targetFolder = info.modsPath
+      break
+    case 'earlyplugins':
+      targetFolder = info.earlyPluginsPath
+      break
+  }
+
+  if (!targetFolder) {
+    throw new Error(`Target folder not found for location: ${options.targetLocation}`)
+  }
+
+  // Parse original name from backup ID
+  const lastUnderscoreIndex = options.backupId.lastIndexOf('_')
+  const originalName = lastUnderscoreIndex > 0
+    ? options.backupId.slice(0, lastUnderscoreIndex)
+    : options.backupId
+
+  const restoredPath = path.join(targetFolder, originalName)
+
+  // Check if file already exists
+  if (await pathExists(restoredPath)) {
+    throw new Error(`A mod with name "${originalName}" already exists in the target folder.`)
+  }
+
+  // Ensure target folder exists
+  await ensureDir(targetFolder)
+
+  // Copy from backup to target
+  await copyPath(backupPath, restoredPath)
+
+  // Remove backup after successful restore
+  await removePath(backupPath)
+
+  return { success: true, restoredPath }
+}
+
+async function permanentlyDeleteMod(options: { backupId: string }): Promise<{ success: boolean }> {
+  const backupRoot = getDeletedModsRoot()
+  const backupPath = path.join(backupRoot, options.backupId)
+
+  // Safety: ensure path is within backup root
+  if (!isWithinPath(backupPath, backupRoot)) {
+    throw new Error('Invalid backup path.')
+  }
+
+  if (!(await pathExists(backupPath))) {
+    throw new Error('Backup not found.')
+  }
+
+  await removePath(backupPath)
+
+  return { success: true }
+}
+
+async function clearDeletedMods(): Promise<{ success: boolean; deletedCount: number }> {
+  const backupRoot = getDeletedModsRoot()
+
+  if (!(await pathExists(backupRoot))) {
+    return { success: true, deletedCount: 0 }
+  }
+
+  const items = await fs.readdir(backupRoot)
+  let deletedCount = 0
+
+  for (const item of items) {
+    const itemPath = path.join(backupRoot, item)
+    try {
+      await removePath(itemPath)
+      deletedCount++
+    } catch (err) {
+      console.error(`Failed to delete backup: ${item}`, err)
+    }
+  }
+
+  return { success: true, deletedCount }
 }
 
 async function addMods(): Promise<AddModResult> {
@@ -980,7 +1178,6 @@ async function scanModsWithWorld(worldId?: string): Promise<ScanResult> {
   const entries: ModEntry[] = []
   const disabledRoot = getDisabledRoot()
   const disabledPaths = {
-    packs: path.join(disabledRoot, 'packs'),
     mods: path.join(disabledRoot, 'mods'),
     earlyplugins: path.join(disabledRoot, 'earlyplugins'),
   }
@@ -999,14 +1196,6 @@ async function scanModsWithWorld(worldId?: string): Promise<ScanResult> {
     }
   } else {
     worldOverrides = await readActiveWorldModOverrides(info.userDataPath)
-  }
-
-  if (info.packsPath) {
-    entries.push(...(await scanPacksFolder(info.packsPath, undefined, worldOverrides ?? undefined)))
-  }
-
-  if (await pathExists(disabledPaths.packs)) {
-    entries.push(...(await scanPacksFolder(disabledPaths.packs, false, worldOverrides ?? undefined)))
   }
 
   if (info.modsPath) {
@@ -1030,7 +1219,78 @@ async function scanModsWithWorld(worldId?: string): Promise<ScanResult> {
   await seedProfilesFromScan(entries)
   await syncDefaultProfileFromScan(entries)
 
-  return { installPath: info.activePath, entries }
+  // Validate mod dependencies
+  const validation = validateModDependencies(entries)
+
+  return { installPath: info.activePath, entries, validation }
+}
+
+function validateModDependencies(entries: ModEntry[]): ModValidationResult {
+  const issues: DependencyIssue[] = []
+
+  // Build maps for quick lookup
+  const installedMods = new Map<string, ModEntry>()
+  const enabledMods = new Set<string>()
+
+  for (const entry of entries) {
+    installedMods.set(entry.id, entry)
+    if (entry.enabled) {
+      enabledMods.add(entry.id)
+    }
+  }
+
+  // Check each enabled mod's dependencies
+  for (const entry of entries) {
+    if (!entry.enabled) continue
+
+    // Check required dependencies
+    for (const depId of entry.dependencies) {
+      const depMod = installedMods.get(depId)
+
+      if (!depMod) {
+        // Dependency not installed
+        issues.push({
+          modId: entry.id,
+          modName: entry.name,
+          type: 'missing_dependency',
+          dependencyId: depId,
+          message: `Required dependency "${depId}" is not installed`,
+        })
+      } else if (!depMod.enabled) {
+        // Dependency installed but disabled
+        issues.push({
+          modId: entry.id,
+          modName: entry.name,
+          type: 'disabled_dependency',
+          dependencyId: depId,
+          message: `Required dependency "${depId}" is disabled`,
+        })
+      }
+    }
+
+    // Check optional dependencies (informational only)
+    for (const depId of entry.optionalDependencies) {
+      const depMod = installedMods.get(depId)
+
+      if (!depMod) {
+        issues.push({
+          modId: entry.id,
+          modName: entry.name,
+          type: 'optional_missing',
+          dependencyId: depId,
+          message: `Optional dependency "${depId}" is not installed`,
+        })
+      }
+    }
+  }
+
+  // Determine if there are errors (missing/disabled required deps) or just warnings (optional missing)
+  const hasErrors = issues.some(
+    (issue) => issue.type === 'missing_dependency' || issue.type === 'disabled_dependency'
+  )
+  const hasWarnings = issues.some((issue) => issue.type === 'optional_missing')
+
+  return { issues, hasErrors, hasWarnings }
 }
 
 // ============================================================================
@@ -2554,10 +2814,11 @@ async function listInstalledMods(): Promise<ListInstalledModsResult> {
     return { mods }
   }
 
-  // Check both mods and packs folders
+  // Check mods folder (both jars and zips are stored here)
+  const modsFolder = installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods')
   const foldersToCheck = [
-    { folder: installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods'), type: 'jar' as BuildArtifactType },
-    { folder: installInfo.packsPath || path.join(installInfo.activePath, 'user', 'Packs'), type: 'zip' as BuildArtifactType },
+    { folder: modsFolder, type: 'jar' as BuildArtifactType },
+    { folder: modsFolder, type: 'zip' as BuildArtifactType },
   ]
 
   for (const { folder, type } of foldersToCheck) {
@@ -2608,14 +2869,8 @@ async function copyArtifactToMods(artifactId: string): Promise<CopyArtifactToMod
     throw new Error('Hytale installation not found. Please configure install path in settings.')
   }
 
-  let destFolder: string
-  if (artifact.artifactType === 'jar') {
-    // Plugins go to Mods folder
-    destFolder = installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods')
-  } else {
-    // Asset packs go to Packs folder
-    destFolder = installInfo.packsPath || path.join(installInfo.activePath, 'user', 'Packs')
-  }
+  // Both plugins (jar) and asset packs (zip) go to Mods folder
+  const destFolder = installInfo.modsPath || path.join(installInfo.activePath, 'user', 'Mods')
 
   await ensureDir(destFolder)
 
@@ -3371,44 +3626,6 @@ async function scanSingleMod(
   })
 }
 
-async function scanPacksFolder(
-  packsPath: string,
-  enabledOverride?: boolean,
-  enabledOverrides?: Map<string, boolean>,
-) {
-  const entries = await fs.readdir(packsPath, { withFileTypes: true })
-  const mods: ModEntry[] = []
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const fullPath = path.join(packsPath, entry.name)
-    let manifest: Record<string, unknown> | null = null
-
-    try {
-      manifest = await readManifestFromFolder(fullPath)
-    } catch {
-      // Failed to read manifest.json
-    }
-
-    const size = await getPathSize(fullPath)
-
-    const modEntry = createModEntry({
-      manifest,
-      fallbackName: entry.name,
-      format: 'directory',
-      location: 'packs',
-      path: fullPath,
-      enabledOverride,
-      enabledOverrides,
-      size,
-    })
-
-    mods.push(modEntry)
-  }
-
-  return mods
-}
-
 async function scanModsFolder(
   modsPath: string,
   enabledOverride?: boolean,
@@ -3537,19 +3754,10 @@ async function scanMods(): Promise<ScanResult> {
   const entries: ModEntry[] = []
   const disabledRoot = getDisabledRoot()
   const disabledPaths = {
-    packs: path.join(disabledRoot, 'packs'),
     mods: path.join(disabledRoot, 'mods'),
     earlyplugins: path.join(disabledRoot, 'earlyplugins'),
   }
   const worldOverrides = await readActiveWorldModOverrides(info.userDataPath)
-
-  if (info.packsPath) {
-    entries.push(...(await scanPacksFolder(info.packsPath, undefined, worldOverrides ?? undefined)))
-  }
-
-  if (await pathExists(disabledPaths.packs)) {
-    entries.push(...(await scanPacksFolder(disabledPaths.packs, false, worldOverrides ?? undefined)))
-  }
 
   if (info.modsPath) {
     entries.push(...(await scanModsFolder(info.modsPath, undefined, worldOverrides ?? undefined)))
@@ -4957,10 +5165,9 @@ async function importWorldMods(): Promise<ImportWorldModsResult> {
       const location = modInfo.location as ModLocation
       let targetRoot: string | null = null
 
-      if (location === 'mods') {
+      if (location === 'mods' || location === 'packs') {
+        // Both mods and packs go to Mods folder
         targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
-      } else if (location === 'packs') {
-        targetRoot = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
       } else if (location === 'earlyplugins') {
         targetRoot = info.earlyPluginsPath ?? path.join(info.activePath, 'UserData', 'EarlyPlugins')
       }
@@ -5016,31 +5223,19 @@ async function listProjects(): Promise<ListProjectsResult> {
   const projectsRoot = getProjectsRoot()
   const projects: ProjectEntry[] = []
 
-  // Check installed paths
+  // Check installed paths (all installed in Mods folder)
   const installedPaths = new Set<string>()
-  if (info.activePath) {
-    const modsPath = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
-    const packsPath = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
-
-    if (await pathExists(modsPath)) {
-      const modsEntries = await fs.readdir(modsPath, { withFileTypes: true })
-      for (const entry of modsEntries) {
-        if (entry.isDirectory()) {
-          installedPaths.add(entry.name)
-        }
-      }
-    }
-    if (await pathExists(packsPath)) {
-      const packsEntries = await fs.readdir(packsPath, { withFileTypes: true })
-      for (const entry of packsEntries) {
-        if (entry.isDirectory()) {
-          installedPaths.add(entry.name)
-        }
+  const modsPath = info.modsPath ?? (info.activePath ? path.join(info.activePath, 'UserData', 'Mods') : null)
+  if (modsPath && await pathExists(modsPath)) {
+    const modsEntries = await fs.readdir(modsPath, { withFileTypes: true })
+    for (const entry of modsEntries) {
+      if (entry.isDirectory()) {
+        installedPaths.add(entry.name)
       }
     }
   }
 
-  // Scan packs projects
+  // Scan packs projects (installed to Mods folder)
   const packsProjectRoot = path.join(projectsRoot, 'packs')
   if (await pathExists(packsProjectRoot)) {
     const packEntries = await fs.readdir(packsProjectRoot, { withFileTypes: true })
@@ -5050,8 +5245,8 @@ async function listProjects(): Promise<ListProjectsResult> {
       const modEntry = await scanSingleMod(projectPath, 'directory', 'packs')
       if (modEntry) {
         const isInstalled = installedPaths.has(entry.name)
-        const installedPath = isInstalled && info.activePath
-          ? path.join(info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs'), entry.name)
+        const installedPath = isInstalled && modsPath
+          ? path.join(modsPath, entry.name)
           : undefined
         projects.push({
           ...modEntry,
@@ -5129,11 +5324,8 @@ async function installProject(options: InstallProjectOptions): Promise<InstallPr
   const projectName = path.basename(projectPath)
   let targetRoot: string
 
-  if (projectType === 'pack') {
-    targetRoot = info.packsPath ?? path.join(info.activePath, 'UserData', 'Packs')
-  } else {
-    targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
-  }
+  // Both packs and plugins go to Mods folder
+  targetRoot = info.modsPath ?? path.join(info.activePath, 'UserData', 'Mods')
 
   await ensureDir(targetRoot)
   const installedPath = path.join(targetRoot, projectName)
@@ -5284,6 +5476,11 @@ function registerIpcHandlers() {
   // Mod management handlers
   ipcMain.handle('hymn:delete-mod', async (_event, options: DeleteModOptions) => deleteMod(options))
   ipcMain.handle('hymn:add-mods', async () => addMods())
+  // Deleted mods management handlers
+  ipcMain.handle('hymn:list-deleted-mods', async () => listDeletedMods())
+  ipcMain.handle('hymn:restore-deleted-mod', async (_event, options: RestoreDeletedModOptions) => restoreDeletedMod(options))
+  ipcMain.handle('hymn:permanently-delete-mod', async (_event, options: { backupId: string }) => permanentlyDeleteMod(options))
+  ipcMain.handle('hymn:clear-deleted-mods', async () => clearDeletedMods())
   ipcMain.handle('hymn:create-pack', async (_event, options: CreatePackOptions) => createPack(options))
   ipcMain.handle('hymn:create-plugin', async (_event, options: CreatePluginOptions) => createPlugin(options))
   ipcMain.handle('hymn:get-mod-manifest', async (_event, options: ModManifestOptions) => getModManifest(options))
@@ -5328,6 +5525,72 @@ function registerIpcHandlers() {
   ipcMain.handle('hymn:read-file', async (_event, filePath: string) => readFile(filePath))
   ipcMain.handle('hymn:save-file', async (_event, filePath: string, content: string) => saveFile(filePath, content))
   ipcMain.handle('hymn:check-path-exists', async (_event, filePath: string) => pathExists(filePath))
+  ipcMain.handle(
+    'hymn:select-asset-file',
+    async (_event, options: SelectAssetFileOptions): Promise<SelectAssetFileResult> => {
+      const { defaultPath, modRoot, filters, title } = options
+
+      // Use path.resolve to get absolute paths with proper OS separators
+      const resolvedModRoot = path.resolve(modRoot)
+      const resolvedDefaultPath = path.resolve(defaultPath)
+
+      // Determine the starting path
+      let startPath = resolvedModRoot // Default to project root
+
+      // Try to use the specified defaultPath if it exists
+      try {
+        const stats = await fs.stat(resolvedDefaultPath)
+        if (stats.isDirectory()) {
+          startPath = resolvedDefaultPath
+        } else {
+          // If it's a file, use its parent directory
+          startPath = path.dirname(resolvedDefaultPath)
+        }
+      } catch {
+        // defaultPath doesn't exist, stay with modRoot
+      }
+
+      // Get the focused window for proper modal behavior
+      const focusedWindow = BrowserWindow.getFocusedWindow()
+
+      const dialogOptions: Electron.OpenDialogOptions = {
+        properties: ['openFile'],
+        defaultPath: startPath,
+        title: title || 'Select Asset File',
+        filters: filters || [
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'tga', 'dds'] },
+          { name: 'Blocky Models', extensions: ['blockymodel'] },
+          { name: 'Blocky Animations', extensions: ['blockyanim'] },
+          { name: 'Audio', extensions: ['ogg', 'wav', 'mp3'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      }
+
+      // Pass the window to make dialog modal and defaultPath work correctly
+      const result = focusedWindow
+        ? await dialog.showOpenDialog(focusedWindow, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions)
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { relativePath: null }
+      }
+
+      const selectedPath = result.filePaths[0]
+
+      // Compute relative path from modRoot
+      const normalizedSelected = selectedPath.replace(/\\/g, '/')
+      const normalizedModRoot = modRoot.replace(/\\/g, '/')
+      const modRootWithSlash = normalizedModRoot.endsWith('/') ? normalizedModRoot : normalizedModRoot + '/'
+
+      if (normalizedSelected.startsWith(modRootWithSlash)) {
+        const relativePath = normalizedSelected.slice(modRootWithSlash.length)
+        return { relativePath }
+      }
+
+      // If the file is outside modRoot, return null (invalid selection)
+      return { relativePath: null }
+    },
+  )
   // Java source file management for plugins
   ipcMain.handle('hymn:list-java-sources', async (_event, options: ListJavaSourcesOptions) => listJavaSources(options))
   ipcMain.handle('hymn:create-java-class', async (_event, options: CreateJavaClassOptions) => createJavaClass(options))
@@ -5511,10 +5774,18 @@ function registerIpcHandlers() {
   })
 
   // Directory watcher handlers
-  ipcMain.handle('hymn:start-mods-watcher', async (_event, modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null) => {
-    watcherManager.startModsWatcher(modsPath, packsPath, earlyPluginsPath)
+  ipcMain.handle('hymn:start-mods-watcher', async (_event, modsPath: string | null, earlyPluginsPath: string | null) => {
+    watcherManager.startModsWatcher(modsPath, earlyPluginsPath)
   })
   ipcMain.handle('hymn:stop-mods-watcher', async () => {
     watcherManager.stopModsWatcher()
+  })
+
+  // World config watcher handlers (for detecting external mod toggles)
+  ipcMain.handle('hymn:start-world-config-watcher', async (_event, savesPath: string) => {
+    watcherManager.startWorldConfigWatcher(savesPath)
+  })
+  ipcMain.handle('hymn:stop-world-config-watcher', async () => {
+    watcherManager.stopWorldConfigWatcher()
   })
 }

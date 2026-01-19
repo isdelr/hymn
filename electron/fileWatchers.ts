@@ -1,13 +1,13 @@
 import { app, BrowserWindow } from 'electron'
 import * as chokidar from 'chokidar'
 import path from 'node:path'
-import type { DirectoryChangeEvent, FileChangeEvent, FileChangeType } from '../src/shared/hymn-types'
+import type { DirectoryChangeEvent, FileChangeEvent, FileChangeType, WorldConfigChangeEvent } from '../src/shared/hymn-types'
 
 type DirectoryType = 'projects' | 'builds' | 'mods'
 
 interface WatcherEntry {
   watcher: chokidar.FSWatcher
-  type: DirectoryType | 'active-project'
+  type: DirectoryType | 'active-project' | 'world-config'
 }
 
 // Debounce timers for each directory type
@@ -49,7 +49,7 @@ export class WatcherManager {
   ): chokidar.FSWatcher {
     const watcher = chokidar.watch(paths, {
       ignoreInitial: true,
-      depth: 8,
+      depth: 5,
       awaitWriteFinish: {
         stabilityThreshold: 1000,
         pollInterval: 100
@@ -111,13 +111,13 @@ export class WatcherManager {
     }
   }
 
-  startModsWatcher(modsPath: string | null, packsPath: string | null, earlyPluginsPath: string | null): void {
+  startModsWatcher(modsPath: string | null, earlyPluginsPath: string | null): void {
     const key = 'mods'
 
     // Stop existing mods watcher if any
     this.stopModsWatcher()
 
-    const paths = [modsPath, packsPath, earlyPluginsPath].filter((p): p is string => !!p)
+    const paths = [modsPath, earlyPluginsPath].filter((p): p is string => !!p)
     if (paths.length === 0) {
       console.log('No mods paths to watch')
       return
@@ -138,6 +138,77 @@ export class WatcherManager {
       entry.watcher.close()
       this.watchers.delete(key)
       console.log('Stopped mods watcher')
+    }
+  }
+
+  // World config watcher - watches Saves folder for config.json changes
+  private worldConfigDebounceTimer: NodeJS.Timeout | null = null
+
+  private sendWorldConfigChangeEvent(worldId: string) {
+    if (!this.win || this.win.isDestroyed()) return
+
+    // Debounce rapid changes
+    if (this.worldConfigDebounceTimer) {
+      clearTimeout(this.worldConfigDebounceTimer)
+    }
+
+    this.worldConfigDebounceTimer = setTimeout(() => {
+      const event: WorldConfigChangeEvent = { worldId }
+      this.win?.webContents.send('world:config-changed', event)
+      this.worldConfigDebounceTimer = null
+    }, DEBOUNCE_MS)
+  }
+
+  startWorldConfigWatcher(savesPath: string): void {
+    const key = 'world-config'
+
+    // Stop existing watcher if any
+    this.stopWorldConfigWatcher()
+
+    try {
+      const watcher = chokidar.watch(savesPath, {
+        ignoreInitial: true,
+        depth: 2,
+        awaitWriteFinish: {
+          stabilityThreshold: 250, // Faster response for config changes
+          pollInterval: 100
+        },
+      })
+
+      watcher
+        .on('change', (filePath) => {
+          // Only respond to config.json changes
+          if (path.basename(filePath) === 'config.json') {
+            // Extract worldId from path: .../Saves/<worldId>/config.json
+            const worldId = path.basename(path.dirname(filePath))
+            console.log('World config changed:', worldId, filePath)
+            this.sendWorldConfigChangeEvent(worldId)
+          }
+        })
+        .on('error', (error) => {
+          console.error('World config watcher error:', error)
+        })
+
+      this.watchers.set(key, { watcher, type: 'world-config' })
+      console.log('Started world config watcher:', savesPath)
+    } catch (error) {
+      console.error('Failed to start world config watcher:', error)
+    }
+  }
+
+  stopWorldConfigWatcher(): void {
+    const key = 'world-config'
+
+    if (this.worldConfigDebounceTimer) {
+      clearTimeout(this.worldConfigDebounceTimer)
+      this.worldConfigDebounceTimer = null
+    }
+
+    const entry = this.watchers.get(key)
+    if (entry) {
+      entry.watcher.close()
+      this.watchers.delete(key)
+      console.log('Stopped world config watcher')
     }
   }
 
@@ -187,7 +258,7 @@ export class WatcherManager {
     try {
       const watcher = chokidar.watch(projectPath, {
         ignoreInitial: true,
-        depth: 8,
+        depth: 5,
         awaitWriteFinish: {
           stabilityThreshold: 1000,
           pollInterval: 100
@@ -245,6 +316,16 @@ export class WatcherManager {
       clearTimeout(timer)
     }
     debounceTimers.clear()
+
+    // Clear private debounce timers
+    if (this.projectDebounceTimer) {
+      clearTimeout(this.projectDebounceTimer)
+      this.projectDebounceTimer = null
+    }
+    if (this.worldConfigDebounceTimer) {
+      clearTimeout(this.worldConfigDebounceTimer)
+      this.worldConfigDebounceTimer = null
+    }
 
     // Close all watchers
     for (const [key, entry] of this.watchers) {
