@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queries'
-import type { ThemeMode, ModSortOrder, InstallInfo } from '@/shared/hymn-types'
+import type { ThemeMode, ModSortOrder, InstallInfo, GradleVersion } from '@/shared/hymn-types'
 
 export function useSetTheme() {
   const queryClient = useQueryClient()
@@ -77,6 +77,20 @@ export function useSelectInstallPath() {
         queryClient.invalidateQueries({ queryKey: queryKeys.worlds.all })
         queryClient.invalidateQueries({ queryKey: queryKeys.mods.all })
       }
+    },
+  })
+}
+
+export function useSetGradleVersion() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (version: GradleVersion) => {
+      await window.hymnSettings.setGradleVersion(version)
+      return version
+    },
+    onSuccess: (version) => {
+      queryClient.setQueryData<GradleVersion>(queryKeys.settings.gradleVersion, version)
     },
   })
 }

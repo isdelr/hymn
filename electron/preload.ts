@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, JdkDownloadProgress, GradleVersion } from '../src/shared/hymn-types'
 
 const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -109,10 +109,24 @@ const settingsApi: HymnSettingsApi = {
   getJdkPath: () => ipcRenderer.invoke('settings:getJdkPath'),
   setJdkPath: (path: string | null) => ipcRenderer.invoke('settings:setJdkPath', path),
   selectJdkPath: () => ipcRenderer.invoke('settings:selectJdkPath'),
+  // Managed JDK (auto-downloaded)
+  getManagedJdkPath: () => ipcRenderer.invoke('settings:getManagedJdkPath'),
+  downloadJdk: () => ipcRenderer.invoke('settings:downloadJdk'),
+  cancelJdkDownload: () => ipcRenderer.invoke('settings:cancelJdkDownload'),
+  onJdkDownloadProgress: (callback: (progress: JdkDownloadProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: JdkDownloadProgress) => callback(progress)
+    ipcRenderer.on('jdk:download-progress', handler)
+    return () => {
+      ipcRenderer.removeListener('jdk:download-progress', handler)
+    }
+  },
   // HytaleServer.jar path configuration
   getServerJarPath: () => ipcRenderer.invoke('settings:getServerJarPath'),
   setServerJarPath: (path: string | null) => ipcRenderer.invoke('settings:setServerJarPath', path),
   selectServerJarPath: () => ipcRenderer.invoke('settings:selectServerJarPath'),
+  // Gradle version configuration
+  getGradleVersion: () => ipcRenderer.invoke('settings:getGradleVersion'),
+  setGradleVersion: (version: GradleVersion) => ipcRenderer.invoke('settings:setGradleVersion', version),
 }
 
 const fileWatcherApi: HymnFileWatcherApi = {

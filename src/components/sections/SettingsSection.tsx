@@ -1,8 +1,14 @@
+import { useState, useEffect } from 'react'
 import {
   HardDrive,
   Palette,
   SortAsc,
   Server,
+  Coffee,
+  Cog,
+  Download,
+  X,
+  FolderOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,17 +18,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
-import type { ThemeMode, ModSortOrder } from '@/shared/hymn-types'
+import type { ThemeMode, ModSortOrder, GradleVersion, JdkDownloadProgress } from '@/shared/hymn-types'
 
 // React Query hooks
-import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies } from '@/hooks/queries'
+import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath } from '@/hooks/queries'
 import {
   useSelectInstallPath,
   useSetTheme,
   useSetModSortOrder,
   useSelectServerJarPath,
   useSetServerJarPath,
+  useSetGradleVersion,
+  useSelectJdkPath,
+  useDownloadJdk,
+  useCancelJdkDownload,
+  useClearJdkPath,
 } from '@/hooks/mutations'
 
 // Helper to truncate paths for display
@@ -81,10 +93,22 @@ export function SettingsSection() {
   const { data: modSortOrder = 'name' } = useModSortOrder()
   const { data: serverJarPath = null } = useServerJarPath()
   const { data: dependencies } = useDependencies()
+  const { data: gradleVersion = '9.3.0' } = useGradleVersion()
+  const { data: customJdkPath = null } = useJdkPath()
+
+  // JDK download progress state
+  const [jdkDownloadProgress, setJdkDownloadProgress] = useState<JdkDownloadProgress | null>(null)
 
   // Get the effective server jar path - either custom setting or resolved from dependencies
   const effectiveServerJarPath = serverJarPath || dependencies?.hytale?.serverJarPath || null
   const isUsingDefaultPath = !serverJarPath && !!dependencies?.hytale?.serverJarPath
+
+  // Get JDK info from dependencies
+  const jdkInfo = dependencies?.java
+  const effectiveJdkPath = customJdkPath || jdkInfo?.jdkPath || null
+  const jdkVersion = jdkInfo?.version || null
+  const isJdkFound = jdkInfo?.status === 'found'
+  const isUsingCustomJdk = !!customJdkPath
 
   // Mutations
   const selectInstallPath = useSelectInstallPath()
@@ -92,6 +116,23 @@ export function SettingsSection() {
   const setModSortOrder = useSetModSortOrder()
   const selectServerJarPath = useSelectServerJarPath()
   const setServerJarPath = useSetServerJarPath()
+  const setGradleVersion = useSetGradleVersion()
+  const selectJdkPath = useSelectJdkPath()
+  const downloadJdk = useDownloadJdk()
+  const cancelJdkDownload = useCancelJdkDownload()
+  const clearJdkPath = useClearJdkPath()
+
+  // Listen for JDK download progress
+  useEffect(() => {
+    const unsubscribe = window.hymnSettings.onJdkDownloadProgress((progress) => {
+      setJdkDownloadProgress(progress)
+      if (progress.status === 'complete' || progress.status === 'error') {
+        // Clear progress after a delay
+        setTimeout(() => setJdkDownloadProgress(null), 3000)
+      }
+    })
+    return unsubscribe
+  }, [])
 
   const handleThemeChange = (value: ThemeMode) => {
     setTheme.mutate(value)
@@ -108,6 +149,31 @@ export function SettingsSection() {
   const handleClearServerJarPath = () => {
     setServerJarPath.mutate(null)
   }
+
+  const handleGradleVersionChange = (value: GradleVersion) => {
+    setGradleVersion.mutate(value)
+  }
+
+  const handleSelectJdkPath = () => {
+    selectJdkPath.mutate()
+  }
+
+  const handleDownloadJdk = () => {
+    downloadJdk.mutate()
+  }
+
+  const handleCancelJdkDownload = () => {
+    cancelJdkDownload.mutate()
+  }
+
+  const handleClearJdkPath = () => {
+    clearJdkPath.mutate()
+  }
+
+  const isDownloading = jdkDownloadProgress?.status === 'downloading' || jdkDownloadProgress?.status === 'extracting'
+  const downloadPercent = jdkDownloadProgress?.totalBytes
+    ? Math.round((jdkDownloadProgress.bytesDownloaded / jdkDownloadProgress.totalBytes) * 100)
+    : 0
 
   return (
     <div className="space-y-1">
@@ -176,7 +242,111 @@ export function SettingsSection() {
         </div>
       </SettingRow>
 
-      {/* Row 3: Theme */}
+      {/* Row 3: JDK */}
+      <SettingRow>
+        <IconBox colorClass="bg-orange-500/10">
+          <Coffee className="h-5 w-5 text-orange-500" />
+        </IconBox>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center">
+            <span className="text-sm font-medium">Java Development Kit</span>
+            <StatusDot active={isJdkFound} />
+          </div>
+          {isDownloading ? (
+            <div className="mt-1">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span>{jdkDownloadProgress?.message}</span>
+                {jdkDownloadProgress?.status === 'downloading' && jdkDownloadProgress.totalBytes > 0 && (
+                  <span>({downloadPercent}%)</span>
+                )}
+              </div>
+              <Progress value={downloadPercent} className="h-1.5" />
+            </div>
+          ) : jdkDownloadProgress?.status === 'complete' ? (
+            <p className="text-xs text-emerald-500">{jdkDownloadProgress.message}</p>
+          ) : jdkDownloadProgress?.status === 'error' ? (
+            <p className="text-xs text-red-500">{jdkDownloadProgress.message}</p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground truncate">
+                {effectiveJdkPath ? truncatePath(effectiveJdkPath) : 'Not configured'}
+              </p>
+              {isJdkFound && jdkVersion && (
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                  {isUsingCustomJdk ? 'Custom' : 'Auto-detected'} - Java {jdkVersion}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {isDownloading ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCancelJdkDownload}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSelectJdkPath}
+                disabled={downloadJdk.isPending}
+              >
+                <FolderOpen className="h-4 w-4 mr-1" />
+                Select
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadJdk}
+                disabled={downloadJdk.isPending}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Download
+              </Button>
+              {customJdkPath && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearJdkPath}
+                >
+                  Clear
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </SettingRow>
+
+      {/* Row 4: Gradle Version */}
+      <SettingRow>
+        <IconBox colorClass="bg-teal-500/10">
+          <Cog className="h-5 w-5 text-teal-500" />
+        </IconBox>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium">Gradle Version</span>
+          <p className="text-xs text-muted-foreground">
+            For new plugin projects
+          </p>
+        </div>
+        <Select value={gradleVersion} onValueChange={(v) => handleGradleVersionChange(v as GradleVersion)}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="9.3.0">9.3.0 (Latest)</SelectItem>
+            <SelectItem value="8.12.0">8.12.0</SelectItem>
+            <SelectItem value="8.5">8.5</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+
+      {/* Row 5: Theme */}
       <SettingRow>
         <IconBox colorClass="bg-violet-500/10">
           <Palette className="h-5 w-5 text-violet-500" />
@@ -199,7 +369,7 @@ export function SettingsSection() {
         </Select>
       </SettingRow>
 
-      {/* Row 4: Mod Sort Order */}
+      {/* Row 6: Mod Sort Order */}
       <SettingRow>
         <IconBox colorClass="bg-emerald-500/10">
           <SortAsc className="h-5 w-5 text-emerald-500" />

@@ -42,7 +42,9 @@ export const queryKeys = {
     modSortOrder: ['settings', 'modSortOrder'] as const,
     defaultExportPath: ['settings', 'defaultExportPath'] as const,
     jdkPath: ['settings', 'jdkPath'] as const,
+    managedJdkPath: ['settings', 'managedJdkPath'] as const,
     serverJarPath: ['settings', 'serverJarPath'] as const,
+    gradleVersion: ['settings', 'gradleVersion'] as const,
   },
 
   builds: {

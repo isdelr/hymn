@@ -110,6 +110,9 @@ import type {
   BuildPluginResult,
   BuildPackOptions,
   BuildPackResult,
+  JdkDownloadProgress,
+  JdkDownloadResult,
+  GradleVersion,
 } from '../src/shared/hymn-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -138,6 +141,8 @@ const SETTINGS_KEYS = {
   modSortOrder: 'mod_sort_order',
   defaultExportPath: 'default_export_path',
   jdkPath: 'jdk_path',
+  managedJdkPath: 'managed_jdk_path',
+  gradleVersion: 'gradle_version',
 }
 const DELETED_MODS_FOLDER = 'deleted-mods'
 
@@ -148,6 +153,7 @@ let database: DatabaseInstance | null = null
 let databaseInit: Promise<void> | null = null
 let activeProfileId: string | null = null
 let profilesSeeded = false
+let jdkDownloadAbortController: AbortController | null = null
 
 function createWindow() {
   win = new BrowserWindow({
@@ -1667,11 +1673,11 @@ async function buildMod(options: ModBuildOptions): Promise<ModBuildResult> {
 function getJavaDownloadInstructions(): string {
   const platform = process.platform
   if (platform === 'win32') {
-    return 'Download and install Java 21 (LTS) from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21\n\nSelect Windows x64 MSI installer for easy installation.'
+    return 'Download and install Java 25 from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=25\n\nSelect Windows x64 MSI installer for easy installation.'
   } else if (platform === 'darwin') {
-    return 'Install Java 21 via Homebrew:\nbrew install --cask temurin@21\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21'
+    return 'Install Java 25 via Homebrew:\nbrew install --cask temurin@25\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=25'
   } else {
-    return 'Install Java 21 from your package manager:\nUbuntu/Debian: sudo apt install openjdk-21-jdk\nFedora: sudo dnf install java-21-openjdk-devel\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=21'
+    return 'Install Java 25 from your package manager:\nUbuntu/Debian: sudo apt install openjdk-25-jdk\nFedora: sudo dnf install java-25-openjdk-devel\n\nOr download from Adoptium:\nhttps://adoptium.net/temurin/releases/?version=25'
   }
 }
 
@@ -1688,17 +1694,26 @@ async function checkDependencies(): Promise<CheckDependenciesResult> {
 
 async function checkJavaDependency(): Promise<JavaDependencyInfo> {
   const customJdkPath = await readSetting(SETTINGS_KEYS.jdkPath)
+  const managedJdkPath = await readSetting(SETTINGS_KEYS.managedJdkPath)
   const javaHome = process.env.JAVA_HOME
 
   let jdkPath: string | null = null
   let javaExecutable: string | null = null
 
-  // Priority: custom path > JAVA_HOME
+  // Priority: custom path > managed JDK path > JAVA_HOME
   if (customJdkPath && await pathExists(customJdkPath)) {
     jdkPath = customJdkPath
     const binPath = process.platform === 'win32'
       ? path.join(customJdkPath, 'bin', 'java.exe')
       : path.join(customJdkPath, 'bin', 'java')
+    if (await pathExists(binPath)) {
+      javaExecutable = binPath
+    }
+  } else if (managedJdkPath && await pathExists(managedJdkPath)) {
+    jdkPath = managedJdkPath
+    const binPath = process.platform === 'win32'
+      ? path.join(managedJdkPath, 'bin', 'java.exe')
+      : path.join(managedJdkPath, 'bin', 'java')
     if (await pathExists(binPath)) {
       javaExecutable = binPath
     }
@@ -1789,6 +1804,233 @@ async function checkJavaDependency(): Promise<JavaDependencyInfo> {
       issues: ['Failed to run Java. Please verify your installation.'],
       downloadInstructions: getJavaDownloadInstructions(),
     }
+  }
+}
+
+// JDK Download functionality
+function getJdkDownloadUrl(): string {
+  const os = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
+  const arch = process.arch === 'arm64' ? 'aarch64' : 'x64'
+  // Using Java 25 for Hytale plugin development
+  return `https://api.adoptium.net/v3/binary/latest/25/ga/${os}/${arch}/jdk/hotspot/normal/eclipse`
+}
+
+function getJdkInstallDir(): string {
+  return path.join(app.getPath('userData'), 'jdk')
+}
+
+async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
+  const jdkDir = getJdkInstallDir()
+  await ensureDir(jdkDir)
+
+  jdkDownloadAbortController = new AbortController()
+  const signal = jdkDownloadAbortController.signal
+
+  const downloadUrl = getJdkDownloadUrl()
+
+  try {
+    // Send initial progress
+    win?.webContents.send('jdk:download-progress', {
+      status: 'downloading',
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      message: 'Starting download...',
+    } satisfies JdkDownloadProgress)
+
+    // Fetch with redirect following
+    const response = await fetch(downloadUrl, {
+      signal,
+      redirect: 'follow',
+    })
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+    }
+
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10)
+    const contentDisposition = response.headers.get('content-disposition') || ''
+
+    // Extract filename from content-disposition or use a default
+    let filename = 'jdk.zip'
+    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+    if (filenameMatch) {
+      filename = filenameMatch[1].replace(/['"]/g, '')
+    }
+
+    const isZip = filename.endsWith('.zip')
+    const isTarGz = filename.endsWith('.tar.gz')
+
+    const tempPath = path.join(jdkDir, filename)
+
+    // Stream download with progress
+    const fileStream = createWriteStream(tempPath)
+    const reader = response.body?.getReader()
+
+    if (!reader) {
+      throw new Error('Failed to get response body reader')
+    }
+
+    let bytesDownloaded = 0
+    let lastProgressUpdate = Date.now()
+
+    while (true) {
+      if (signal.aborted) {
+        reader.cancel()
+        fileStream.close()
+        await fs.unlink(tempPath).catch(() => {})
+        throw new Error('Download cancelled')
+      }
+
+      const { done, value } = await reader.read()
+      if (done) break
+
+      fileStream.write(value)
+      bytesDownloaded += value.length
+
+      // Throttle progress updates to every 100ms
+      const now = Date.now()
+      if (now - lastProgressUpdate >= 100) {
+        lastProgressUpdate = now
+        win?.webContents.send('jdk:download-progress', {
+          status: 'downloading',
+          bytesDownloaded,
+          totalBytes: contentLength,
+          message: `Downloading JDK...`,
+        } satisfies JdkDownloadProgress)
+      }
+    }
+
+    fileStream.close()
+    await new Promise<void>((resolve) => fileStream.on('close', resolve))
+
+    // Send extracting progress
+    win?.webContents.send('jdk:download-progress', {
+      status: 'extracting',
+      bytesDownloaded,
+      totalBytes: contentLength,
+      message: 'Extracting JDK...',
+    } satisfies JdkDownloadProgress)
+
+    // Extract the archive
+    let extractedJdkPath: string | null = null
+
+    if (isZip) {
+      // Use JSZip for Windows .zip files
+      const zipData = await fs.readFile(tempPath)
+      const zip = await JSZip.loadAsync(zipData)
+
+      // Find the root directory name (e.g., jdk-25.0.1)
+      const entries = Object.keys(zip.files)
+      const rootDir = entries[0]?.split('/')[0]
+
+      if (!rootDir) {
+        throw new Error('Invalid JDK archive structure')
+      }
+
+      extractedJdkPath = path.join(jdkDir, rootDir)
+
+      // Extract all files
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (signal.aborted) {
+          throw new Error('Extraction cancelled')
+        }
+
+        const fullPath = path.join(jdkDir, relativePath)
+
+        if (zipEntry.dir) {
+          await ensureDir(fullPath)
+        } else {
+          await ensureDir(path.dirname(fullPath))
+          const content = await zipEntry.async('nodebuffer')
+          await fs.writeFile(fullPath, content)
+        }
+      }
+    } else if (isTarGz) {
+      // For .tar.gz on macOS/Linux, use tar command
+      const result = await runCommand('tar', ['-xzf', tempPath, '-C', jdkDir], jdkDir)
+      if (result.exitCode !== 0) {
+        throw new Error(`Failed to extract JDK: ${result.output}`)
+      }
+
+      // Find the extracted directory
+      const entries = await fs.readdir(jdkDir, { withFileTypes: true })
+      const jdkEntry = entries.find(e => e.isDirectory() && e.name.startsWith('jdk-'))
+      if (jdkEntry) {
+        extractedJdkPath = path.join(jdkDir, jdkEntry.name)
+        // On macOS, the JDK is in Contents/Home
+        if (process.platform === 'darwin') {
+          const macJdkPath = path.join(extractedJdkPath, 'Contents', 'Home')
+          if (await pathExists(macJdkPath)) {
+            extractedJdkPath = macJdkPath
+          }
+        }
+      }
+    } else {
+      throw new Error(`Unsupported archive format: ${filename}`)
+    }
+
+    // Clean up temp file
+    await fs.unlink(tempPath).catch(() => {})
+
+    if (!extractedJdkPath || !(await pathExists(extractedJdkPath))) {
+      throw new Error('Failed to locate extracted JDK')
+    }
+
+    // Verify the JDK works
+    const javaExe = process.platform === 'win32'
+      ? path.join(extractedJdkPath, 'bin', 'java.exe')
+      : path.join(extractedJdkPath, 'bin', 'java')
+
+    if (!(await pathExists(javaExe))) {
+      throw new Error('JDK extraction incomplete - java executable not found')
+    }
+
+    // Get version info
+    const versionResult = await runCommand(javaExe, ['-version'], extractedJdkPath)
+    const versionMatch = versionResult.output.match(/version "(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+    const version = versionMatch ? versionMatch[0].replace('version "', '').replace('"', '') : 'unknown'
+
+    // Save the managed JDK path
+    await writeSetting(SETTINGS_KEYS.managedJdkPath, extractedJdkPath)
+
+    // Send complete progress
+    win?.webContents.send('jdk:download-progress', {
+      status: 'complete',
+      bytesDownloaded,
+      totalBytes: contentLength,
+      message: `JDK ${version} installed successfully`,
+    } satisfies JdkDownloadProgress)
+
+    jdkDownloadAbortController = null
+
+    return {
+      success: true,
+      jdkPath: extractedJdkPath,
+      version,
+    }
+  } catch (error) {
+    jdkDownloadAbortController = null
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+
+    win?.webContents.send('jdk:download-progress', {
+      status: 'error',
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      message: errorMessage,
+    } satisfies JdkDownloadProgress)
+
+    return {
+      success: false,
+      error: errorMessage,
+    }
+  }
+}
+
+function cancelJdkDownload(): void {
+  if (jdkDownloadAbortController) {
+    jdkDownloadAbortController.abort()
+    jdkDownloadAbortController = null
   }
 }
 
@@ -3474,6 +3716,9 @@ async function createPlugin(options: CreatePluginOptions): Promise<CreatePluginR
   const patchline = options.patchline ?? 'release'
   const includesAssetPack = options.includesAssetPack ?? true
 
+  // Get configured Gradle version from settings
+  const gradleVersion = (await readSetting(SETTINGS_KEYS.gradleVersion) as GradleVersion) || '9.3.0'
+
   // Plugin goes into projects folder
   const projectsRoot = getProjectsRoot()
   const pluginsProjectRoot = path.join(projectsRoot, 'plugins')
@@ -3967,7 +4212,7 @@ if "%OS%"=="Windows_NT" endlocal
   // gradle-wrapper.properties
   const gradleWrapperProperties = `distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
-distributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.0-bin.zip
+distributionUrl=https\\://services.gradle.org/distributions/gradle-${gradleVersion}-bin.zip
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 `
@@ -5225,6 +5470,26 @@ function registerIpcHandlers() {
     const selectedPath = result.filePaths[0]
     await writeSetting(SETTINGS_KEYS.serverJarPath, selectedPath)
     return selectedPath
+  })
+
+  // Managed JDK handlers (auto-downloaded JDK)
+  ipcMain.handle('settings:getManagedJdkPath', async () => {
+    return readSetting(SETTINGS_KEYS.managedJdkPath)
+  })
+  ipcMain.handle('settings:downloadJdk', async () => {
+    return downloadAndInstallJdk()
+  })
+  ipcMain.handle('settings:cancelJdkDownload', async () => {
+    cancelJdkDownload()
+  })
+
+  // Gradle version settings handlers
+  ipcMain.handle('settings:getGradleVersion', async () => {
+    const version = await readSetting(SETTINGS_KEYS.gradleVersion)
+    return (version as GradleVersion) || '9.3.0'
+  })
+  ipcMain.handle('settings:setGradleVersion', async (_event, version: GradleVersion) => {
+    await writeSetting(SETTINGS_KEYS.gradleVersion, version)
   })
 
   // Window control handlers for frameless window

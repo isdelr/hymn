@@ -551,6 +551,26 @@ export interface JavaDependencyInfo {
   downloadInstructions: string
 }
 
+// JDK Download types
+export type JdkDownloadStatus = 'idle' | 'downloading' | 'extracting' | 'complete' | 'error'
+
+export interface JdkDownloadProgress {
+  status: JdkDownloadStatus
+  bytesDownloaded: number
+  totalBytes: number
+  message: string
+}
+
+export interface JdkDownloadResult {
+  success: boolean
+  jdkPath?: string
+  version?: string
+  error?: string
+}
+
+// Gradle version type
+export type GradleVersion = '9.3.0' | '8.12.0' | '8.5'
+
 // Hytale installation dependency types
 export type HytaleDependencyStatus = 'found' | 'missing'
 
@@ -708,10 +728,18 @@ export interface HymnSettingsApi {
   getJdkPath: () => Promise<string | null>
   setJdkPath: (path: string | null) => Promise<void>
   selectJdkPath: () => Promise<string | null>
+  // Managed JDK (auto-downloaded)
+  getManagedJdkPath: () => Promise<string | null>
+  downloadJdk: () => Promise<JdkDownloadResult>
+  cancelJdkDownload: () => Promise<void>
+  onJdkDownloadProgress: (callback: (progress: JdkDownloadProgress) => void) => () => void
   // HytaleServer.jar path configuration
   getServerJarPath: () => Promise<string | null>
   setServerJarPath: (path: string | null) => Promise<void>
   selectServerJarPath: () => Promise<string | null>
+  // Gradle version configuration
+  getGradleVersion: () => Promise<GradleVersion>
+  setGradleVersion: (version: GradleVersion) => Promise<void>
 }
 
 // File watcher types

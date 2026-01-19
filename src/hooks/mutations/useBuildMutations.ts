@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { queryKeys } from '../queries'
-import type { BuildPluginOptions, BuildPackOptions, BuildPluginResult, BuildPackResult } from '@/shared/hymn-types'
+import type { BuildPluginOptions, BuildPackOptions, BuildPluginResult, BuildPackResult, JdkDownloadResult } from '@/shared/hymn-types'
 
 export function useBuildPlugin() {
   const queryClient = useQueryClient()
@@ -214,6 +214,54 @@ export function useSelectServerJarPath() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to select server jar path')
+    },
+  })
+}
+
+export function useDownloadJdk() {
+  const queryClient = useQueryClient()
+
+  return useMutation<JdkDownloadResult, Error>({
+    mutationFn: async () => {
+      return await window.hymnSettings.downloadJdk()
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedJdkPath })
+        queryClient.invalidateQueries({ queryKey: queryKeys.builds.dependencies })
+        toast.success(`JDK ${result.version} installed successfully`)
+      } else {
+        toast.error(result.error || 'JDK download failed')
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'JDK download failed')
+    },
+  })
+}
+
+export function useCancelJdkDownload() {
+  return useMutation({
+    mutationFn: async () => {
+      return await window.hymnSettings.cancelJdkDownload()
+    },
+  })
+}
+
+export function useClearJdkPath() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      await window.hymnSettings.setJdkPath(null)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.jdkPath })
+      queryClient.invalidateQueries({ queryKey: queryKeys.builds.dependencies })
+      toast.success('Custom JDK path cleared')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to clear JDK path')
     },
   })
 }

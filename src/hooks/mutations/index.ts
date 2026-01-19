@@ -29,6 +29,7 @@ export {
   useSetDefaultExportPath,
   useSelectDefaultExportPath,
   useSelectInstallPath,
+  useSetGradleVersion,
 } from './useSettingsMutations'
 export { useSelectWorld, useExportWorldMods, useImportWorldMods } from './useWorldMutations'
 export {
@@ -43,4 +44,7 @@ export {
   useOpenBuildsFolder,
   useSetServerJarPath,
   useSelectServerJarPath,
+  useDownloadJdk,
+  useCancelJdkDownload,
+  useClearJdkPath,
 } from './useBuildMutations'

@@ -28,9 +28,15 @@ if (!window.hymnSettings) {
     getJdkPath: vi.fn().mockResolvedValue(null),
     setJdkPath: vi.fn().mockResolvedValue(undefined),
     selectJdkPath: vi.fn().mockResolvedValue(null),
+    getManagedJdkPath: vi.fn().mockResolvedValue(null),
+    downloadJdk: vi.fn().mockResolvedValue({ success: true, jdkPath: '/path/to/jdk', version: '25' }),
+    cancelJdkDownload: vi.fn().mockResolvedValue(undefined),
+    onJdkDownloadProgress: vi.fn().mockReturnValue(() => {}),
     getServerJarPath: vi.fn().mockResolvedValue(null),
     setServerJarPath: vi.fn().mockResolvedValue(undefined),
     selectServerJarPath: vi.fn().mockResolvedValue(null),
+    getGradleVersion: vi.fn().mockResolvedValue('9.3.0'),
+    setGradleVersion: vi.fn().mockResolvedValue(undefined),
   }
 }
 
