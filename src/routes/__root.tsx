@@ -4,6 +4,8 @@ import {Boxes, Settings, Sparkles, HelpCircle} from 'lucide-react'
 import {cn} from '@/lib/utils'
 import {useDirtyFilesStore} from '@/stores'
 import {UnsavedChangesDialog} from '@/components/ui/UnsavedChangesDialog'
+import {Tooltip, TooltipTrigger, TooltipContent} from '@/components/ui/tooltip'
+import {useInstallInfo} from '@/hooks/queries/useInstallInfo'
 import type {ThemeMode} from '@/shared/hymn-types'
 
 const sections = [
@@ -12,24 +14,28 @@ const sections = [
         label: 'Mods',
         description: 'Manage your mods present in your Hytale installation',
         icon: Boxes,
+        requiresInstall: true,
     },
     {
         to: '/create' as const,
         label: 'Create',
         description: 'Build new packs and plugins',
         icon: Sparkles,
+        requiresInstall: true,
     },
     {
         to: '/settings' as const,
         label: 'Settings',
         description: 'Configure paths and preferences',
         icon: Settings,
+        requiresInstall: false,
     },
     {
         to: '/help' as const,
         label: 'Help',
         description: 'Learn how to use Hymn',
         icon: HelpCircle,
+        requiresInstall: false,
     },
 ]
 
@@ -40,6 +46,8 @@ function RootLayout() {
     const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
     const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
     const getDirtyFilePaths = useDirtyFilesStore((s) => s.getDirtyFilePaths)
+    const {data: installInfo} = useInstallInfo()
+    const hasInstall = !!installInfo?.activePath
 
     // Initialize and listen for theme changes
     useEffect(() => {
@@ -107,26 +115,49 @@ function RootLayout() {
                             const isActive = section.to === '/'
                                 ? currentPath === '/'
                                 : currentPath.startsWith(section.to)
+                            const isDisabled = section.requiresInstall && !hasInstall
+
+                            if (isDisabled) {
+                                return (
+                                    <Tooltip key={section.to}>
+                                        <TooltipTrigger asChild>
+                                            <button
+                                                disabled
+                                                className={cn(
+                                                    'group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200',
+                                                    'text-muted-foreground/50 cursor-not-allowed',
+                                                )}
+                                            >
+                                                <Icon className="h-5 w-5"/>
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" sideOffset={8}>
+                                            <p className="font-medium">{section.label}</p>
+                                            <p className="text-muted-foreground">Configure your Hytale folder in Settings first</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )
+                            }
 
                             return (
-                                <Link
-                                    key={section.to}
-                                    to={section.to}
-                                    className={cn(
-                                        'group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200',
-                                        isActive
-                                            ? 'bg-primary text-primary-foreground shadow-lg'
-                                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                                    )}
-                                    title={section.label}
-                                >
-                                    <Icon className="h-5 w-5"/>
-                                    {/* Tooltip */}
-                                    <span
-                                        className="absolute left-full ml-3 hidden whitespace-nowrap rounded-lg bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-lg border border-border/50 group-hover:block z-50">
-                    {section.label}
-                  </span>
-                                </Link>
+                                <Tooltip key={section.to}>
+                                    <TooltipTrigger asChild>
+                                        <Link
+                                            to={section.to}
+                                            className={cn(
+                                                'group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200',
+                                                isActive
+                                                    ? 'bg-primary text-primary-foreground shadow-lg'
+                                                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                                            )}
+                                        >
+                                            <Icon className="h-5 w-5"/>
+                                        </Link>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" sideOffset={8}>
+                                        {section.label}
+                                    </TooltipContent>
+                                </Tooltip>
                             )
                         })}
                     </nav>

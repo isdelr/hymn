@@ -186,13 +186,17 @@ export function SettingsSection() {
         </IconBox>
         <div className="flex-1 min-w-0">
           <div className="flex items-center">
-            <span className="text-sm font-medium">Install Location</span>
+            <span className="text-sm font-medium">Hytale Install Location</span>
             <StatusDot active={!!installInfo?.activePath} />
           </div>
           <p className="text-xs text-muted-foreground truncate">
             {installInfo?.activePath
               ? truncatePath(installInfo.activePath)
-              : 'Not configured'}
+              : (
+                <>
+                  Not configured - <a href="https://hytale.com/download" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Download Hytale</a>
+                </>
+              )}
           </p>
         </div>
         <Button

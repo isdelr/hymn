@@ -3,8 +3,18 @@ import path from 'node:path'
 import type { Dirent } from 'node:fs'
 import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
-import yauzl from 'yauzl'
+import type { ZipFile, Entry } from 'yauzl'
 import { pathExists, ensureDir, normalizeRelativePath, movePath } from '../utils/fileSystem'
+
+// Lazy-loaded yauzl for better startup performance
+let yauzlModule: typeof import('yauzl') | null = null
+
+async function getYauzl() {
+  if (!yauzlModule) {
+    yauzlModule = await import('yauzl')
+  }
+  return yauzlModule
+}
 import { ensureSafeRelativePath, ensureServerRelativePath, isWithinPath } from '../utils/security'
 import { SERVER_ASSET_TEMPLATE_BUILDERS, normalizeAssetId, formatAssetLabel } from '../templates/serverAssetBuilders'
 import { resolveInstallInfo } from './InstallService'
@@ -33,7 +43,7 @@ const MAX_VANILLA_SCAN_DEPTH = 2
 // Module-level state for vanilla zip caching
 interface VanillaZipState {
   zipPath: string | null
-  zipfile: yauzl.ZipFile | null
+  zipfile: ZipFile | null
   entries: VanillaAssetEntry[]
   isComplete: boolean
   isReading: Promise<void> | null
@@ -369,8 +379,9 @@ function resetVanillaZipState(zipPath: string): void {
   vanillaZipState.isReading = null
 }
 
-async function openZipFile(zipPath: string): Promise<yauzl.ZipFile> {
-  return await new Promise<yauzl.ZipFile>((resolve, reject) => {
+async function openZipFile(zipPath: string): Promise<ZipFile> {
+  const yauzl = await getYauzl()
+  return await new Promise<ZipFile>((resolve, reject) => {
     yauzl.open(
       zipPath,
       { lazyEntries: true, autoClose: false },
@@ -385,9 +396,9 @@ async function openZipFile(zipPath: string): Promise<yauzl.ZipFile> {
   })
 }
 
-async function readNextZipEntry(zipfile: yauzl.ZipFile): Promise<yauzl.Entry | null> {
-  return await new Promise<yauzl.Entry | null>((resolve, reject) => {
-    const handleEntry = (entry: yauzl.Entry) => {
+async function readNextZipEntry(zipfile: ZipFile): Promise<Entry | null> {
+  return await new Promise<Entry | null>((resolve, reject) => {
+    const handleEntry = (entry: Entry) => {
       cleanup()
       resolve(entry)
     }
@@ -596,7 +607,7 @@ async function extractZipEntry(archivePath: string, entryPath: string, destinati
       }
     }
 
-    const handleEntry = (entry: yauzl.Entry) => {
+    const handleEntry = (entry: Entry) => {
       if (entry.fileName.endsWith('/')) {
         zipfile.readEntry()
         return
