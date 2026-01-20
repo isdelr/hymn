@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { createRouter, RouterProvider, createHashHistory } from '@tanstack/react-router'
 import { setupBeforeUnloadWarning } from '@/stores'
 import { FileWatcherProvider } from '@/providers/FileWatcherProvider'
 import { routeTree } from './routeTree.gen'
 
-// Create a new router instance
-const router = createRouter({ routeTree })
+// Create a new router instance with hash history for Electron compatibility
+const hashHistory = createHashHistory()
+const router = createRouter({ routeTree, history: hashHistory })
 
 // Register the router instance for type safety
 declare module '@tanstack/react-router' {
