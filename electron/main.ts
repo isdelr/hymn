@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeTheme, session, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, Menu, nativeTheme, session, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { readSetting, SETTINGS_KEYS } from './core/database'
@@ -180,7 +180,7 @@ function createWindow(): void {
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
       enableBlinkFeatures: '',
-      devTools: !!VITE_DEV_SERVER_URL,
+      devTools: !app.isPackaged,
     },
   })
 
@@ -304,11 +304,19 @@ async function main(): Promise<void> {
     setupPermissions()
     setupMenu()
     createWindow()
+
+    // Register DevTools shortcut in development only
+    if (!app.isPackaged) {
+      globalShortcut.register('CommandOrControl+Shift+I', () => {
+        win?.webContents.toggleDevTools()
+      })
+    }
   })
 
   // Quit when all windows are closed (except on macOS)
   app.on('window-all-closed', () => {
     watcherManager.stopAllWatchers()
+    globalShortcut.unregisterAll()
     if (process.platform !== 'darwin') {
       app.quit()
       win = null
