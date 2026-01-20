@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Package,
   Plus,
@@ -162,16 +162,16 @@ function CreateIndexPage() {
 
   const hasInstall = !!installInfo?.activePath
 
+  // Redirect to settings if no install path is configured
+  useEffect(() => {
+    if (installInfo !== undefined && !hasInstall) {
+      navigate({ to: '/settings' })
+    }
+  }, [installInfo, hasInstall, navigate])
+
+  // Show nothing while checking or redirecting
   if (!hasInstall) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Package className="mb-4 h-12 w-12 text-muted-foreground/50" />
-        <h2 className="mb-2 text-lg font-medium">No Install Detected</h2>
-        <p className="text-sm text-muted-foreground">
-          Configure your Hytale install path in Settings to start creating.
-        </p>
-      </div>
-    )
+    return null
   }
 
   return (
