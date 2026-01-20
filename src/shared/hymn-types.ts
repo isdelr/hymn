@@ -826,6 +826,9 @@ export interface HymnApi {
   createPackLanguage: (options: CreatePackLanguageOptions) => Promise<CreatePackLanguageResult>
 }
 
+// Platform type for conditional UI rendering
+export type Platform = 'win32' | 'darwin' | 'linux'
+
 // Window control API for frameless window
 export interface HymnWindowApi {
   minimize: () => Promise<void>
@@ -833,6 +836,7 @@ export interface HymnWindowApi {
   close: () => Promise<void>
   isMaximized: () => Promise<boolean>
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+  getPlatform: () => Platform
 }
 
 // Theme types

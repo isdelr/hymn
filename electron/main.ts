@@ -90,13 +90,15 @@ function setupPermissions(): void {
  * Create the main browser window.
  */
 function createWindow(): void {
+  const isMac = process.platform === 'darwin'
+
   win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 600,
     frame: false,
-    titleBarStyle: 'hidden',
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),

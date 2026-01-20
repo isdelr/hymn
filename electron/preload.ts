@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform } from '../src/shared/hymn-types'
 
 // Input validation helpers for preload security
 function isNonEmptyString(value: unknown): value is string {
@@ -35,6 +35,7 @@ const windowApi: HymnWindowApi = {
       ipcRenderer.removeListener('window:maximized-change', handler)
     }
   },
+  getPlatform: () => process.platform as Platform,
 }
 
 const api: HymnApi = {

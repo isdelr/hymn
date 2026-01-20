@@ -48,6 +48,7 @@ if (!window.hymnWindow) {
     close: vi.fn().mockResolvedValue(undefined),
     isMaximized: vi.fn().mockResolvedValue(false),
     onMaximizedChange: vi.fn().mockReturnValue(() => {}),
+    getPlatform: vi.fn().mockReturnValue('win32'),
   }
 }
 

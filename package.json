@@ -1,7 +1,7 @@
 {
   "name": "hymn",
   "private": true,
-  "version": "0.1.4-6-gd761947",
+  "version": "0.1.7",
   "description": "A modern mod manager and editor for Hytale",
   "author": {
     "name": "isa",
