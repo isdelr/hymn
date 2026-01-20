@@ -10,6 +10,7 @@ import {
   X,
   FolderOpen,
   Info,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,7 +25,7 @@ import { cn } from '@/lib/utils'
 import type { ThemeMode, ModSortOrder, JdkDownloadProgress } from '@/shared/hymn-types'
 
 // React Query hooks
-import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath, useAppVersion } from '@/hooks/queries'
+import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath, useAppVersion, useUpdateInfo } from '@/hooks/queries'
 import {
   useSelectInstallPath,
   useSetTheme,
@@ -35,6 +36,7 @@ import {
   useDownloadJdk,
   useCancelJdkDownload,
   useClearJdkPath,
+  useCheckForUpdates,
 } from '@/hooks/mutations'
 
 // Helper to truncate paths for display
@@ -111,6 +113,9 @@ export function SettingsSection() {
   const isJdkFound = jdkInfo?.status === 'found'
   const isUsingCustomJdk = !!customJdkPath
 
+  // Update info
+  const { data: updateInfo } = useUpdateInfo()
+
   // Mutations
   const selectInstallPath = useSelectInstallPath()
   const setTheme = useSetTheme()
@@ -121,6 +126,7 @@ export function SettingsSection() {
   const downloadJdk = useDownloadJdk()
   const cancelJdkDownload = useCancelJdkDownload()
   const clearJdkPath = useClearJdkPath()
+  const checkForUpdates = useCheckForUpdates()
 
   // Listen for JDK download progress
   useEffect(() => {
@@ -393,8 +399,25 @@ export function SettingsSection() {
           <span className="text-sm font-medium">About Hymn</span>
           <p className="text-xs text-muted-foreground">
             Version {appVersion || '...'}
+            {updateInfo?.status === 'available' && updateInfo.version && (
+              <span className="text-primary ml-2">
+                (Update {updateInfo.version} available)
+              </span>
+            )}
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => checkForUpdates.mutate()}
+          disabled={checkForUpdates.isPending || updateInfo?.status === 'checking'}
+        >
+          <RefreshCw className={cn(
+            'h-4 w-4 mr-1',
+            (checkForUpdates.isPending || updateInfo?.status === 'checking') && 'animate-spin'
+          )} />
+          Check for Updates
+        </Button>
       </SettingRow>
     </div>
   )

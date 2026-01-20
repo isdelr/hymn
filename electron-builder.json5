@@ -8,6 +8,11 @@
   "directories": {
     "output": "release/${version}"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "isdelr",
+    "repo": "hymn"
+  },
   "files": [
     "dist",
     "dist-electron",

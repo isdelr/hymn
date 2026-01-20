@@ -59,4 +59,8 @@ export const queryKeys = {
   deletedMods: {
     all: ['deletedMods'] as const,
   },
+
+  update: {
+    info: ['update', 'info'] as const,
+  },
 }

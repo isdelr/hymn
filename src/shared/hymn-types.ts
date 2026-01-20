@@ -968,6 +968,32 @@ export interface HymnFileWatcherApi {
   onWorldConfigChange: (callback: (event: WorldConfigChangeEvent) => void) => () => void
 }
 
+// Auto-update types
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+
+export interface UpdateProgress {
+  bytesPerSecond: number
+  percent: number
+  transferred: number
+  total: number
+}
+
+export interface UpdateInfo {
+  status: UpdateStatus
+  version: string | null
+  releaseNotes: string | null
+  progress: UpdateProgress | null
+  error: string | null
+}
+
+export interface HymnUpdateApi {
+  getInfo: () => Promise<UpdateInfo>
+  checkForUpdates: () => Promise<UpdateInfo>
+  downloadUpdate: () => Promise<void>
+  installUpdate: () => void
+  onUpdateStatus: (callback: (info: UpdateInfo) => void) => () => void
+}
+
 // Global window augmentation
 declare global {
   interface Window {
@@ -976,5 +1002,6 @@ declare global {
     hymnTheme: HymnThemeApi
     hymnSettings: HymnSettingsApi
     hymnFileWatcher: HymnFileWatcherApi
+    hymnUpdate: HymnUpdateApi
   }
 }

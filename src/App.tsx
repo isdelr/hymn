@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { createRouter, RouterProvider, createHashHistory } from '@tanstack/react-router'
+import { Toaster } from 'sonner'
 import { setupBeforeUnloadWarning } from '@/stores'
 import { FileWatcherProvider } from '@/providers/FileWatcherProvider'
 import { routeTree } from './routeTree.gen'
@@ -24,6 +25,7 @@ export function App() {
   return (
     <FileWatcherProvider>
       <RouterProvider router={router} />
+      <Toaster position="bottom-right" richColors />
     </FileWatcherProvider>
   )
 }

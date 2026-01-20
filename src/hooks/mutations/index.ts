@@ -60,3 +60,8 @@ export {
   usePermanentlyDeleteMod,
   useClearDeletedMods,
 } from './useDeletedModMutations'
+export {
+  useCheckForUpdates,
+  useDownloadUpdate,
+  useInstallUpdate,
+} from './useUpdateMutations'

@@ -4,6 +4,7 @@ import {Boxes, Settings, Sparkles, HelpCircle} from 'lucide-react'
 import {cn} from '@/lib/utils'
 import {useDirtyFilesStore} from '@/stores'
 import {UnsavedChangesDialog} from '@/components/ui/UnsavedChangesDialog'
+import {UpdateBanner} from '@/components/ui/UpdateBanner'
 import {Tooltip, TooltipTrigger, TooltipContent} from '@/components/ui/tooltip'
 import {useInstallInfo} from '@/hooks/queries/useInstallInfo'
 import type {ThemeMode} from '@/shared/hymn-types'
@@ -165,6 +166,8 @@ function RootLayout() {
 
                 {/* Main Content */}
                 <main className="flex flex-1 flex-col overflow-hidden">
+                    {/* Update Banner */}
+                    <UpdateBanner />
 
                     <>
                         {/* Header */}

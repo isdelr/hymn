@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readSetting, SETTINGS_KEYS } from './core/database'
 import { loadInstallPathOverride } from './services/InstallService'
 import { loadProfileSettings, ensureDefaultProfile } from './services/ProfileService'
+import { initializeUpdater, cleanupUpdater } from './services/UpdateService'
 import { registerAllIpcHandlers, shouldForceClose, resetForceClose } from './ipc'
 import { watcherManager } from './fileWatchers'
 import type { ThemeMode } from '../src/shared/hymn-types'
@@ -42,13 +43,14 @@ const DEVELOPMENT_CSP = [
 ].join('; ')
 
 // Production CSP removes unsafe-eval and adds hardening directives
+// Note: connect-src includes GitHub for auto-update status communication
 const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://api.github.com https://github.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -305,6 +307,9 @@ async function main(): Promise<void> {
     setupMenu()
     createWindow()
 
+    // Initialize auto-updater
+    initializeUpdater()
+
     // Register DevTools shortcut in development only
     if (!app.isPackaged) {
       globalShortcut.register('CommandOrControl+Shift+I', () => {
@@ -316,6 +321,7 @@ async function main(): Promise<void> {
   // Quit when all windows are closed
   app.on('window-all-closed', () => {
     watcherManager.stopAllWatchers()
+    cleanupUpdater()
     globalShortcut.unregisterAll()
     app.quit()
     win = null

@@ -4,6 +4,7 @@ import { registerSettingsHandlers } from './settingsHandlers'
 import { registerThemeHandlers } from './themeHandlers'
 import { registerWindowHandlers, shouldForceClose, resetForceClose } from './windowHandlers'
 import { registerWatcherHandlers } from './watcherHandlers'
+import { registerUpdateHandlers } from './updateHandlers'
 
 export function registerAllIpcHandlers(getWindow: () => BrowserWindow | null): void {
   registerHymnHandlers()
@@ -11,6 +12,7 @@ export function registerAllIpcHandlers(getWindow: () => BrowserWindow | null): v
   registerThemeHandlers()
   registerWindowHandlers(getWindow)
   registerWatcherHandlers()
+  registerUpdateHandlers()
 }
 
 export {
@@ -19,6 +21,7 @@ export {
   registerThemeHandlers,
   registerWindowHandlers,
   registerWatcherHandlers,
+  registerUpdateHandlers,
   shouldForceClose,
   resetForceClose,
 }

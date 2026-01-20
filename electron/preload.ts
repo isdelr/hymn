@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform, SupportedJdkVersion } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, HymnUpdateApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform, SupportedJdkVersion, UpdateInfo } from '../src/shared/hymn-types'
 
 // Input validation helpers for preload security
 function isNonEmptyString(value: unknown): value is string {
@@ -244,8 +244,23 @@ const fileWatcherApi: HymnFileWatcherApi = {
   },
 }
 
+const updateApi: HymnUpdateApi = {
+  getInfo: () => ipcRenderer.invoke('update:getInfo'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (callback: (info: UpdateInfo) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info)
+    ipcRenderer.on('update:status-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('update:status-changed', handler)
+    }
+  },
+}
+
 contextBridge.exposeInMainWorld('hymn', api)
 contextBridge.exposeInMainWorld('hymnWindow', windowApi)
 contextBridge.exposeInMainWorld('hymnTheme', themeApi)
 contextBridge.exposeInMainWorld('hymnSettings', settingsApi)
 contextBridge.exposeInMainWorld('hymnFileWatcher', fileWatcherApi)
+contextBridge.exposeInMainWorld('hymnUpdate', updateApi)

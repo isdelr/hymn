@@ -54,6 +54,28 @@ if (!window.hymnWindow) {
   }
 }
 
+if (!window.hymnUpdate) {
+  window.hymnUpdate = {
+    getInfo: vi.fn().mockResolvedValue({
+      status: 'idle',
+      version: null,
+      releaseNotes: null,
+      progress: null,
+      error: null,
+    }),
+    checkForUpdates: vi.fn().mockResolvedValue({
+      status: 'not-available',
+      version: null,
+      releaseNotes: null,
+      progress: null,
+      error: null,
+    }),
+    downloadUpdate: vi.fn().mockResolvedValue(undefined),
+    installUpdate: vi.fn(),
+    onUpdateStatus: vi.fn().mockReturnValue(() => {}),
+  }
+}
+
 if (!window.matchMedia) {
   const listeners = new Set<EventListenerOrEventListenerObject>()
   window.matchMedia = (query: string): MediaQueryList => {
