@@ -24,12 +24,13 @@ let win: BrowserWindow | null = null
 
 // Content Security Policy configuration
 // - 'unsafe-eval' in dev: Required for Vite HMR
+// - 'unsafe-inline' for scripts in dev: Required for Vite's inline script injection
 // - 'unsafe-inline' for styles: Required for Tailwind CSS
 // - 'img-src https:' is intentionally broad to allow mod icons/images from external sources
 // - connect-src localhost in dev: Required for Vite dev server communication
 const DEVELOPMENT_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
