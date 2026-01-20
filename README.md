@@ -23,6 +23,17 @@ Download the latest release for your platform from the [Releases](https://github
 | macOS | `.dmg` image |
 | Linux | `.AppImage` / `.deb` |
 
+### macOS Users
+
+The macOS app is not notarized. On first launch, you may see "Hymn is damaged and can't be opened."
+
+**To fix this, open Terminal and run:**
+```bash
+xattr -cr /Applications/Hymn.app
+```
+
+Or: Right-click the app → Open → Click "Open" in the security dialog.
+
 **Requirements:** Hytale Early Access installed
 
 ## Key Paths
