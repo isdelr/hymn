@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, session, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { readSetting, SETTINGS_KEYS } from './core/database'
@@ -87,32 +87,83 @@ function setupPermissions(): void {
 }
 
 /**
- * Get title bar overlay config based on current theme.
+ * Set up a minimal application menu.
+ * On macOS, keeps essential app menu items. On other platforms, removes menu entirely.
  */
-function getTitleBarOverlayConfig(isDark: boolean): Electron.TitleBarOverlay {
-  return {
-    color: isDark ? '#1a1b26' : '#ffffff',
-    symbolColor: isDark ? '#a9b1d6' : '#1a1b26',
-    height: 32
+function setupMenu(): void {
+  const isMac = process.platform === 'darwin'
+
+  if (isMac) {
+    // macOS requires at least an app menu for standard keyboard shortcuts to work
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' },
+        ],
+      },
+      {
+        label: 'Window',
+        submenu: [
+          { role: 'minimize' },
+          { role: 'zoom' },
+          { type: 'separator' },
+          { role: 'front' },
+        ],
+      },
+    ]
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  } else {
+    // On Windows/Linux, remove the menu entirely
+    Menu.setApplicationMenu(null)
   }
+}
+
+// Theme colors for title bar background
+const THEME_COLORS = {
+  dark: '#1a1b26',
+  light: '#ffffff',
+}
+
+/**
+ * Get the appropriate background color based on current theme.
+ */
+function getBackgroundColor(): string {
+  return nativeTheme.shouldUseDarkColors ? THEME_COLORS.dark : THEME_COLORS.light
 }
 
 /**
  * Create the main browser window.
  */
 function createWindow(): void {
-  const isMac = process.platform === 'darwin'
-  const isDark = nativeTheme.shouldUseDarkColors
+  const isLinux = process.platform === 'linux'
 
   win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    frame: false,
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: isMac ? false : getTitleBarOverlayConfig(isDark),
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
+    // Set background color for title bar on macOS and Windows (Linux uses system theming)
+    backgroundColor: isLinux ? undefined : getBackgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -121,8 +172,16 @@ function createWindow(): void {
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
       enableBlinkFeatures: '',
+      devTools: !!VITE_DEV_SERVER_URL,
     },
   })
+
+  // Update title bar background color when theme changes (macOS/Windows only)
+  if (!isLinux) {
+    nativeTheme.on('updated', () => {
+      win?.setBackgroundColor(getBackgroundColor())
+    })
+  }
 
   // Set up watcher manager with window reference
   watcherManager.setWindow(win)
@@ -134,14 +193,6 @@ function createWindow(): void {
   win.on('unmaximize', () => {
     win?.webContents.send('window:maximized', false)
   })
-
-  // Update titleBarOverlay colors when theme changes (Windows/Linux only)
-  if (!isMac) {
-    nativeTheme.on('updated', () => {
-      const isDark = nativeTheme.shouldUseDarkColors
-      win?.setTitleBarOverlay?.(getTitleBarOverlayConfig(isDark))
-    })
-  }
 
   // Handle close event - check for unsaved changes via IPC
   win.on('close', (event) => {
@@ -234,6 +285,7 @@ async function main(): Promise<void> {
   app.whenReady().then(() => {
     setupCSP()
     setupPermissions()
+    setupMenu()
     createWindow()
   })
 
