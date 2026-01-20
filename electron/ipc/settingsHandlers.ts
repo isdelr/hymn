@@ -1,8 +1,8 @@
 import { execa } from 'execa'
-import path from 'node:path'
 import { ipcMain, dialog, app } from 'electron'
 import { readSetting, writeSetting, SETTINGS_KEYS } from '../core/database'
 import { downloadAndInstallJdk, cancelJdkDownload } from '../services/JdkDownloadService'
+import { resolveJavaBinPath } from '../utils/fileSystem'
 import type { ThemeMode, ModSortOrder, GradleVersion, SupportedJdkVersion } from '../../src/shared/hymn-types'
 import { getGradleVersionForJdk } from '../../src/shared/hymn-types'
 
@@ -11,9 +11,10 @@ import { getGradleVersionForJdk } from '../../src/shared/hymn-types'
  * Returns null if version cannot be determined.
  */
 async function getJavaMajorVersion(jdkPath: string): Promise<number | null> {
-  const javaBinPath = process.platform === 'win32'
-    ? path.join(jdkPath, 'bin', 'java.exe')
-    : path.join(jdkPath, 'bin', 'java')
+  const javaBinPath = await resolveJavaBinPath(jdkPath)
+  if (!javaBinPath) {
+    return null
+  }
 
   try {
     const result = await execa(javaBinPath, ['-version'], { reject: false })

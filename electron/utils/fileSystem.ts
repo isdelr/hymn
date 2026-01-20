@@ -127,3 +127,58 @@ export function pathsEqual(path1: string, path2: string): boolean {
 
   return normalized1.toLowerCase() === normalized2.toLowerCase()
 }
+
+/**
+ * Resolve the Java binary path within a JDK directory.
+ * Handles both standard JDK directories and macOS .jdk bundle structures.
+ *
+ * @param jdkPath - The root JDK directory path
+ * @returns The full path to the java binary if found, null otherwise
+ */
+export async function resolveJavaBinPath(jdkPath: string): Promise<string | null> {
+  const javaExe = process.platform === 'win32' ? 'java.exe' : 'java'
+
+  // Standard JDK structure: {jdkPath}/bin/java
+  const standardPath = path.join(jdkPath, 'bin', javaExe)
+  if (await pathExists(standardPath)) {
+    return standardPath
+  }
+
+  // macOS .jdk bundle structure: {jdkPath}/Contents/Home/bin/java
+  if (process.platform === 'darwin') {
+    const macBundlePath = path.join(jdkPath, 'Contents', 'Home', 'bin', javaExe)
+    if (await pathExists(macBundlePath)) {
+      return macBundlePath
+    }
+  }
+
+  return null
+}
+
+/**
+ * Resolve the JAVA_HOME path within a JDK directory.
+ * Handles both standard JDK directories and macOS .jdk bundle structures.
+ *
+ * @param jdkPath - The root JDK directory path
+ * @returns The JAVA_HOME path if found, null otherwise
+ */
+export async function resolveJavaHomePath(jdkPath: string): Promise<string | null> {
+  const javaExe = process.platform === 'win32' ? 'java.exe' : 'java'
+
+  // Standard JDK structure: {jdkPath}/bin/java - JAVA_HOME is jdkPath
+  const standardPath = path.join(jdkPath, 'bin', javaExe)
+  if (await pathExists(standardPath)) {
+    return jdkPath
+  }
+
+  // macOS .jdk bundle structure: {jdkPath}/Contents/Home/bin/java - JAVA_HOME is Contents/Home
+  if (process.platform === 'darwin') {
+    const macHomePath = path.join(jdkPath, 'Contents', 'Home')
+    const macBinPath = path.join(macHomePath, 'bin', javaExe)
+    if (await pathExists(macBinPath)) {
+      return macHomePath
+    }
+  }
+
+  return null
+}

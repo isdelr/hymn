@@ -1,6 +1,5 @@
 import { execa } from 'execa'
-import path from 'node:path'
-import { pathExists } from '../utils/fileSystem'
+import { pathExists, resolveJavaBinPath } from '../utils/fileSystem'
 import { readSetting, SETTINGS_KEYS } from '../core/database'
 import { resolveInstallInfo } from './InstallService'
 import type { CheckDependenciesResult, JavaDependencyInfo, HytaleDependencyInfo } from '../../src/shared/hymn-types'
@@ -20,38 +19,36 @@ async function checkJavaVersion(): Promise<{ available: boolean; version?: strin
   // First check for custom JDK path
   const customJdkPath = await readSetting(SETTINGS_KEYS.jdkPath)
   if (customJdkPath && (await pathExists(customJdkPath))) {
-    const javaBinPath = process.platform === 'win32'
-      ? path.join(customJdkPath, 'bin', 'java.exe')
-      : path.join(customJdkPath, 'bin', 'java')
-
-    try {
-      const { stdout, stderr } = await runVersionCheck(javaBinPath, ['-version'])
-      const output = stderr || stdout
-      const match = output.match(/version "([^"]+)"/)
-      if (match) {
-        return { available: true, version: match[1], path: customJdkPath }
+    const javaBinPath = await resolveJavaBinPath(customJdkPath)
+    if (javaBinPath) {
+      try {
+        const { stdout, stderr } = await runVersionCheck(javaBinPath, ['-version'])
+        const output = stderr || stdout
+        const match = output.match(/version "([^"]+)"/)
+        if (match) {
+          return { available: true, version: match[1], path: customJdkPath }
+        }
+      } catch {
+        // Custom JDK path invalid
       }
-    } catch {
-      // Custom JDK path invalid
     }
   }
 
   // Check managed JDK
   const managedJdkPath = await readSetting(SETTINGS_KEYS.managedJdkPath)
   if (managedJdkPath && (await pathExists(managedJdkPath))) {
-    const javaBinPath = process.platform === 'win32'
-      ? path.join(managedJdkPath, 'bin', 'java.exe')
-      : path.join(managedJdkPath, 'bin', 'java')
-
-    try {
-      const { stdout, stderr } = await runVersionCheck(javaBinPath, ['-version'])
-      const output = stderr || stdout
-      const match = output.match(/version "([^"]+)"/)
-      if (match) {
-        return { available: true, version: match[1], path: managedJdkPath }
+    const javaBinPath = await resolveJavaBinPath(managedJdkPath)
+    if (javaBinPath) {
+      try {
+        const { stdout, stderr } = await runVersionCheck(javaBinPath, ['-version'])
+        const output = stderr || stdout
+        const match = output.match(/version "([^"]+)"/)
+        if (match) {
+          return { available: true, version: match[1], path: managedJdkPath }
+        }
+      } catch {
+        // Managed JDK path invalid
       }
-    } catch {
-      // Managed JDK path invalid
     }
   }
 

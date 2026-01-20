@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import { BrowserWindow } from 'electron'
 import type { ZipFile, Entry } from 'yauzl'
-import { pathExists, ensureDir, removePath } from '../utils/fileSystem'
+import { pathExists, ensureDir, removePath, resolveJavaBinPath } from '../utils/fileSystem'
 
 // Lazy-loaded modules for better startup performance
 // @ts-expect-error - tar has no type declarations
@@ -268,12 +268,9 @@ export async function downloadAndInstallJdk(
       version: fullVersion,
     })
 
-    // Verify installation
-    const javaBin = process.platform === 'win32'
-      ? path.join(installDir, 'bin', 'java.exe')
-      : path.join(installDir, 'bin', 'java')
-
-    if (!(await pathExists(javaBin))) {
+    // Verify installation - handles both standard and macOS bundle structures
+    const javaBin = await resolveJavaBinPath(installDir)
+    if (!javaBin) {
       throw new Error('JDK installation verification failed')
     }
 
