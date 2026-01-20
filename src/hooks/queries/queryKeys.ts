@@ -63,4 +63,8 @@ export const queryKeys = {
   update: {
     info: ['update', 'info'] as const,
   },
+
+  assetPreview: {
+    byPath: (filePath: string) => ['assetPreview', filePath] as const,
+  },
 }

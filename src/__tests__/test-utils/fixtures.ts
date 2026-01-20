@@ -408,6 +408,11 @@ export const buildHymnApi = (fixtures: Fixtures, overrides: Partial<HymnApi> = {
     deleteProject: vi.fn().mockResolvedValue({
       success: true,
     }),
+    readBinaryFile: vi.fn().mockResolvedValue({
+      success: true,
+      dataUrl: 'data:image/png;base64,TEST',
+      size: 1024,
+    }),
   }
 
   const merged = { ...api, ...overrides } as HymnApi

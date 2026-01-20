@@ -145,6 +145,8 @@ import type {
   CreatePackLanguageOptions,
   SelectAssetFileOptions,
   SelectAssetFileResult,
+  ReadBinaryFileOptions,
+  ReadBinaryFileResult,
 } from '../../src/shared/hymn-types'
 
 // Cache TTL constants (in milliseconds)
@@ -368,4 +370,33 @@ export function registerHymnHandlers(): void {
   ipcMain.handle('hymn:get-pack-translations', async (_event, options: GetPackTranslationsOptions) => getPackTranslations(options))
   ipcMain.handle('hymn:save-pack-translations', async (_event, options: SavePackTranslationsOptions) => savePackTranslations(options))
   ipcMain.handle('hymn:create-pack-language', async (_event, options: CreatePackLanguageOptions) => createPackLanguage(options))
+
+  // Binary file reading for asset previews
+  ipcMain.handle(
+    'hymn:read-binary-file',
+    async (_event, options: ReadBinaryFileOptions): Promise<ReadBinaryFileResult> => {
+      const { filePath, mimeType, maxSizeBytes = 10_000_000 } = options
+
+      try {
+        if (!(await pathExists(filePath))) {
+          return { success: false, error: 'File not found' }
+        }
+
+        const stat = await fs.stat(filePath)
+        if (stat.size > maxSizeBytes) {
+          return { success: false, error: 'File too large' }
+        }
+
+        const buffer = await fs.readFile(filePath)
+        const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
+
+        return { success: true, dataUrl, size: stat.size }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to read file',
+        }
+      }
+    },
+  )
 }

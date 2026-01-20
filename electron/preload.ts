@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, HymnUpdateApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform, SupportedJdkVersion, UpdateInfo } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, HymnUpdateApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform, SupportedJdkVersion, UpdateInfo, ReadBinaryFileOptions } from '../src/shared/hymn-types'
 
 // Input validation helpers for preload security
 function isNonEmptyString(value: unknown): value is string {
@@ -144,6 +144,8 @@ const api: HymnApi = {
   getPackTranslations: (options: GetPackTranslationsOptions) => ipcRenderer.invoke('hymn:get-pack-translations', options),
   savePackTranslations: (options: SavePackTranslationsOptions) => ipcRenderer.invoke('hymn:save-pack-translations', options),
   createPackLanguage: (options: CreatePackLanguageOptions) => ipcRenderer.invoke('hymn:create-pack-language', options),
+  // Binary file reading for asset previews
+  readBinaryFile: (options: ReadBinaryFileOptions) => ipcRenderer.invoke('hymn:read-binary-file', options),
 }
 
 const themeApi: HymnThemeApi = {

@@ -784,6 +784,20 @@ export interface CreatePackLanguageResult {
   filePath: string
 }
 
+// Binary file reading for asset previews
+export interface ReadBinaryFileOptions {
+  filePath: string
+  mimeType: string
+  maxSizeBytes?: number
+}
+
+export interface ReadBinaryFileResult {
+  success: boolean
+  dataUrl?: string
+  size?: number
+  error?: string
+}
+
 export interface HymnApi {
   getInstallInfo: () => Promise<InstallInfo>
   selectInstallPath: () => Promise<InstallInfo>
@@ -864,6 +878,8 @@ export interface HymnApi {
   getPackTranslations: (options: GetPackTranslationsOptions) => Promise<GetPackTranslationsResult>
   savePackTranslations: (options: SavePackTranslationsOptions) => Promise<SavePackTranslationsResult>
   createPackLanguage: (options: CreatePackLanguageOptions) => Promise<CreatePackLanguageResult>
+  // Binary file reading for asset previews
+  readBinaryFile: (options: ReadBinaryFileOptions) => Promise<ReadBinaryFileResult>
 }
 
 // Platform type for conditional UI rendering
