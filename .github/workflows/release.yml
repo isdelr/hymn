@@ -102,7 +102,7 @@ jobs:
           # Write to file to preserve newlines
           echo "$CHANGELOG" > release_notes.md
           echo "" >> release_notes.md
-          echo "**[Full Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)**" >> release_notes.md
+          echo "**[Full Changelog](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md)**" >> release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
