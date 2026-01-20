@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
     Dialog,
     DialogContent,
@@ -9,10 +12,28 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-react'
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from '@/components/ui/form'
 import type { PackManifest } from '@/shared/hymn-types'
+
+const formSchema = z.object({
+    name: z.string().min(1, 'Name is required'),
+    version: z.string().min(1, 'Version is required'),
+    group: z.string().optional(),
+    website: z.string().optional(),
+    description: z.string().optional(),
+    authorName: z.string().optional(),
+})
+
+type FormData = z.infer<typeof formSchema>
 
 interface ProjectSettingsDialogProps {
     isOpen: boolean
@@ -29,10 +50,23 @@ export function ProjectSettingsDialog({
     projectFormat,
     onSaved,
 }: ProjectSettingsDialogProps) {
-    const [manifest, setManifest] = useState<PackManifest | null>(null)
+    const [originalManifest, setOriginalManifest] = useState<PackManifest | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    const form = useForm<FormData>({
+        resolver: zodResolver(formSchema),
+        defaultValues: {
+            name: '',
+            version: '',
+            group: '',
+            website: '',
+            description: '',
+            authorName: '',
+        },
+        mode: 'onChange',
+    })
 
     const loadManifest = useCallback(async () => {
         setIsLoading(true)
@@ -43,7 +77,16 @@ export function ProjectSettingsDialog({
                 format: projectFormat,
             })
             if (result.content) {
-                setManifest(JSON.parse(result.content))
+                const manifest = JSON.parse(result.content) as PackManifest
+                setOriginalManifest(manifest)
+                form.reset({
+                    name: manifest.Name || '',
+                    version: manifest.Version || '',
+                    group: manifest.Group || '',
+                    website: manifest.Website || '',
+                    description: manifest.Description || '',
+                    authorName: manifest.Authors?.[0]?.Name || '',
+                })
             } else {
                 setError('Could not load project manifest')
             }
@@ -53,7 +96,7 @@ export function ProjectSettingsDialog({
         } finally {
             setIsLoading(false)
         }
-    }, [projectPath, projectFormat])
+    }, [projectPath, projectFormat, form])
 
     // Load manifest when dialog opens
     useEffect(() => {
@@ -62,19 +105,25 @@ export function ProjectSettingsDialog({
         }
     }, [isOpen, projectPath, loadManifest])
 
-    const handleUpdate = (updates: Partial<PackManifest>) => {
-        if (!manifest) return
-        setManifest({ ...manifest, ...updates })
-    }
-
-    const handleSave = async () => {
-        if (!manifest) return
+    const handleSubmit = async (data: FormData) => {
+        if (!originalManifest) return
         setIsSaving(true)
         try {
+            const updatedManifest: PackManifest = {
+                ...originalManifest,
+                Name: data.name,
+                Version: data.version,
+                Group: data.group || undefined,
+                Website: data.website || undefined,
+                Description: data.description || undefined,
+                Authors: data.authorName
+                    ? [{ ...originalManifest.Authors?.[0], Name: data.authorName }]
+                    : originalManifest.Authors,
+            }
             await window.hymn.saveModManifest({
                 path: projectPath,
                 format: projectFormat,
-                content: JSON.stringify(manifest, null, 2),
+                content: JSON.stringify(updatedManifest, null, 2),
             })
             onSaved?.()
             onClose()
@@ -87,10 +136,13 @@ export function ProjectSettingsDialog({
     }
 
     const handleClose = () => {
-        setManifest(null)
+        setOriginalManifest(null)
         setError(null)
+        form.reset()
         onClose()
     }
+
+    const hasAuthors = originalManifest?.Authors && originalManifest.Authors.length > 0
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -110,95 +162,132 @@ export function ProjectSettingsDialog({
                     <div className="py-8 text-center text-destructive text-sm">
                         {error}
                     </div>
-                ) : manifest ? (
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="project-name">Name</Label>
-                                <Input
-                                    id="project-name"
-                                    value={manifest.Name || ''}
-                                    onChange={(e) => handleUpdate({ Name: e.target.value })}
-                                    placeholder="My Mod"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="project-version">Version</Label>
-                                <Input
-                                    id="project-version"
-                                    value={manifest.Version || ''}
-                                    onChange={(e) => handleUpdate({ Version: e.target.value })}
-                                    placeholder="1.0.0"
-                                />
-                            </div>
-                        </div>
+                ) : originalManifest ? (
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(handleSubmit)}>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField
+                                        control={form.control}
+                                        name="name"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Name</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="My Mod" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="version"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Version</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="1.0.0" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="project-group">Group</Label>
-                                <Input
-                                    id="project-group"
-                                    value={manifest.Group || ''}
-                                    onChange={(e) => handleUpdate({ Group: e.target.value })}
-                                    placeholder="com.example"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="project-website">Website</Label>
-                                <Input
-                                    id="project-website"
-                                    value={manifest.Website || ''}
-                                    onChange={(e) => handleUpdate({ Website: e.target.value })}
-                                    placeholder="https://..."
-                                />
-                            </div>
-                        </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField
+                                        control={form.control}
+                                        name="group"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Group</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="com.example" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="website"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Website</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="https://..." {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="project-description">Description</Label>
-                            <Textarea
-                                id="project-description"
-                                value={manifest.Description || ''}
-                                onChange={(e) => handleUpdate({ Description: e.target.value })}
-                                placeholder="A short description of your mod..."
-                                rows={3}
-                            />
-                        </div>
-
-                        {manifest.Authors && manifest.Authors.length > 0 && (
-                            <div className="space-y-2">
-                                <Label htmlFor="project-author">Author</Label>
-                                <Input
-                                    id="project-author"
-                                    value={manifest.Authors[0]?.Name || ''}
-                                    onChange={(e) => handleUpdate({
-                                        Authors: [{ ...manifest.Authors?.[0], Name: e.target.value }]
-                                    })}
-                                    placeholder="Your name"
+                                <FormField
+                                    control={form.control}
+                                    name="description"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Description</FormLabel>
+                                            <FormControl>
+                                                <Textarea
+                                                    placeholder="A short description of your mod..."
+                                                    rows={3}
+                                                    {...field}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
                                 />
+
+                                {hasAuthors && (
+                                    <FormField
+                                        control={form.control}
+                                        name="authorName"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Author</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="Your name" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
                             </div>
-                        )}
-                    </div>
+
+                            <DialogFooter>
+                                <Button type="button" variant="ghost" onClick={handleClose}>
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={isSaving || !form.formState.isValid}
+                                >
+                                    {isSaving ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        'Save Changes'
+                                    )}
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </Form>
                 ) : null}
 
-                <DialogFooter>
-                    <Button variant="ghost" onClick={handleClose}>
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleSave}
-                        disabled={isSaving || isLoading || !manifest}
-                    >
-                        {isSaving ? (
-                            <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Saving...
-                            </>
-                        ) : (
-                            'Save Changes'
-                        )}
-                    </Button>
-                </DialogFooter>
+                {!originalManifest && !isLoading && !error && (
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={handleClose}>
+                            Cancel
+                        </Button>
+                    </DialogFooter>
+                )}
             </DialogContent>
         </Dialog>
     )

@@ -1,18 +1,14 @@
 import fs from 'node:fs/promises'
 import { constants } from 'node:fs'
 import path from 'node:path'
+import fse from 'fs-extra'
 
-/**
- * Check if a path exists on the filesystem.
- */
-export async function pathExists(target: string): Promise<boolean> {
-  try {
-    await fs.access(target)
-    return true
-  } catch {
-    return false
-  }
-}
+// Re-export fs-extra functions for common operations
+export const pathExists = fse.pathExists
+export const ensureDir = fse.ensureDir
+export const copyPath = fse.copy
+export const removePath = fse.remove
+export const movePath = fse.move
 
 /**
  * Get the total size of a file or directory in bytes.
@@ -40,54 +36,6 @@ export async function getPathSize(target: string): Promise<number | undefined> {
   }
 }
 
-/**
- * Ensure a directory exists, creating it recursively if needed.
- */
-export async function ensureDir(target: string): Promise<void> {
-  await fs.mkdir(target, { recursive: true })
-}
-
-/**
- * Copy a file or directory recursively.
- */
-export async function copyPath(source: string, destination: string): Promise<void> {
-  const stat = await fs.stat(source)
-  if (stat.isDirectory()) {
-    await ensureDir(destination)
-    const entries = await fs.readdir(source, { withFileTypes: true })
-    for (const entry of entries) {
-      await copyPath(path.join(source, entry.name), path.join(destination, entry.name))
-    }
-    return
-  }
-  await ensureDir(path.dirname(destination))
-  await fs.copyFile(source, destination)
-}
-
-/**
- * Remove a file or directory recursively.
- */
-export async function removePath(target: string): Promise<void> {
-  await fs.rm(target, { recursive: true, force: true })
-}
-
-/**
- * Move a file or directory. Falls back to copy+delete if cross-device.
- */
-export async function movePath(source: string, destination: string): Promise<void> {
-  try {
-    await ensureDir(path.dirname(destination))
-    await fs.rename(source, destination)
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException
-    if (err.code === 'EXDEV') {
-      await copyPath(source, destination)
-      await removePath(source)
-      return
-    }
-    throw error
-  }
-}
 
 /**
  * Read a JSON file and parse it.
@@ -97,28 +45,6 @@ export async function readJsonFile(filePath: string): Promise<Record<string, unk
   return JSON.parse(content) as Record<string, unknown>
 }
 
-/**
- * Calculate the total size of a directory recursively.
- */
-export async function calculateDirectorySize(dirPath: string): Promise<number> {
-  let totalSize = 0
-
-  async function walkDir(currentPath: string) {
-    const items = await fs.readdir(currentPath, { withFileTypes: true })
-    for (const item of items) {
-      const fullPath = path.join(currentPath, item.name)
-      if (item.isDirectory()) {
-        await walkDir(fullPath)
-      } else {
-        const stat = await fs.stat(fullPath)
-        totalSize += stat.size
-      }
-    }
-  }
-
-  await walkDir(dirPath)
-  return totalSize
-}
 
 /**
  * Normalize a path to use forward slashes (for cross-platform consistency).

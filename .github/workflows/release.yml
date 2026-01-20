@@ -74,6 +74,7 @@ jobs:
             release/**/*-Setup.exe
             release/**/*.dmg
             release/**/*.AppImage
+            release/**/latest*.yml
           if-no-files-found: warn
           retention-days: 1
 

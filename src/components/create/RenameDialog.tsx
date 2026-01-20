@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
     Dialog,
     DialogContent,
@@ -9,7 +12,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from '@/components/ui/form'
 
 interface RenameDialogProps {
     isOpen: boolean
@@ -34,34 +44,47 @@ export function RenameDialog({
     placeholder,
     validateFn
 }: RenameDialogProps) {
-    const [newName, setNewName] = useState(currentName)
-    const [error, setError] = useState<string | null>(null)
+    // Create schema with optional custom validation
+    const formSchema = z.object({
+        name: z.string()
+            .min(1, 'Name is required')
+            .transform(val => val.trim())
+            .refine(
+                val => val !== currentName,
+                'Name must be different from current name'
+            )
+            .superRefine((val, ctx) => {
+                if (validateFn) {
+                    const error = validateFn(val)
+                    if (error) {
+                        ctx.addIssue({
+                            code: z.ZodIssueCode.custom,
+                            message: error,
+                        })
+                    }
+                }
+            })
+    })
 
-    const handleNameChange = (value: string) => {
-        setNewName(value)
-        if (validateFn) {
-            setError(validateFn(value))
-        } else {
-            setError(null)
-        }
-    }
+    type FormData = z.infer<typeof formSchema>
 
-    const handleConfirm = () => {
-        if (!newName.trim()) return
-        if (validateFn) {
-            const validationError = validateFn(newName.trim())
-            if (validationError) {
-                setError(validationError)
-                return
-            }
+    const form = useForm<FormData>({
+        resolver: zodResolver(formSchema),
+        defaultValues: { name: currentName },
+        mode: 'onChange',
+    })
+
+    // Reset form when dialog opens with new currentName
+    useEffect(() => {
+        if (isOpen) {
+            form.reset({ name: currentName })
         }
-        if (newName.trim() !== currentName) {
-            onConfirm(newName.trim())
-        }
+    }, [isOpen, currentName, form])
+
+    const handleSubmit = (data: FormData) => {
+        onConfirm(data.name)
         onClose()
     }
-
-    const isValid = newName.trim() && !error && newName.trim() !== currentName
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -72,35 +95,40 @@ export function RenameDialog({
                         {description}
                     </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="rename-input">{label}</Label>
-                        <Input
-                            id="rename-input"
-                            placeholder={placeholder}
-                            value={newName}
-                            onChange={(e) => handleNameChange(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && isValid) handleConfirm()
-                            }}
-                            autoFocus
-                        />
-                    </div>
-                    {error && (
-                        <p className="text-xs text-destructive">{error}</p>
-                    )}
-                </div>
-                <DialogFooter>
-                    <Button variant="ghost" onClick={onClose}>
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleConfirm}
-                        disabled={!isValid}
-                    >
-                        Rename
-                    </Button>
-                </DialogFooter>
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(handleSubmit)}>
+                        <div className="grid gap-4 py-4">
+                            <FormField
+                                control={form.control}
+                                name="name"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>{label}</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                placeholder={placeholder}
+                                                autoFocus
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+                        <DialogFooter>
+                            <Button type="button" variant="ghost" onClick={onClose}>
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={!form.formState.isValid}
+                            >
+                                Rename
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
             </DialogContent>
         </Dialog>
     )

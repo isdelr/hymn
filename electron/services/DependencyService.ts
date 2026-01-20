@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execa } from 'execa'
 import path from 'node:path'
 import { pathExists } from '../utils/fileSystem'
 import { readSetting, SETTINGS_KEYS } from '../core/database'
@@ -6,18 +6,11 @@ import { resolveInstallInfo } from './InstallService'
 import type { CheckDependenciesResult, JavaDependencyInfo, HytaleDependencyInfo } from '../../src/shared/hymn-types'
 
 /**
- * Run a command with arguments using spawn (more secure than exec).
+ * Run a command with arguments and capture output.
  */
 async function runVersionCheck(command: string, args: string[] = []): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false })
-    let stdout = ''
-    let stderr = ''
-    child.stdout?.on('data', (data) => { stdout += data.toString() })
-    child.stderr?.on('data', (data) => { stderr += data.toString() })
-    child.on('error', reject)
-    child.on('close', () => resolve({ stdout, stderr }))
-  })
+  const result = await execa(command, args, { reject: false })
+  return { stdout: result.stdout, stderr: result.stderr }
 }
 
 /**

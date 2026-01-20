@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execa } from 'execa'
 import path from 'node:path'
 import { ipcMain, dialog, app } from 'electron'
 import { readSetting, writeSetting, SETTINGS_KEYS } from '../core/database'
@@ -15,21 +15,17 @@ async function getJavaMajorVersion(jdkPath: string): Promise<number | null> {
     ? path.join(jdkPath, 'bin', 'java.exe')
     : path.join(jdkPath, 'bin', 'java')
 
-  return new Promise((resolve) => {
-    const child = spawn(javaBinPath, ['-version'], { shell: false })
-    let stderr = ''
-    child.stderr?.on('data', (data) => { stderr += data.toString() })
-    child.on('error', () => resolve(null))
-    child.on('close', () => {
-      // Java version is printed to stderr in format: version "21.0.1" or version "25"
-      const match = stderr.match(/version "(\d+)/)
-      if (match) {
-        resolve(parseInt(match[1], 10))
-      } else {
-        resolve(null)
-      }
-    })
-  })
+  try {
+    const result = await execa(javaBinPath, ['-version'], { reject: false })
+    // Java version is printed to stderr in format: version "21.0.1" or version "25"
+    const match = result.stderr.match(/version "(\d+)/)
+    if (match) {
+      return parseInt(match[1], 10)
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 export function registerSettingsHandlers(): void {

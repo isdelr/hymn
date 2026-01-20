@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { createRouter, RouterProvider, createHashHistory } from '@tanstack/react-router'
-import { Toaster } from 'sonner'
+import { Toaster } from '@/components/ui/sonner'
 import { setupBeforeUnloadWarning } from '@/stores'
 import { FileWatcherProvider } from '@/providers/FileWatcherProvider'
 import { routeTree } from './routeTree.gen'
