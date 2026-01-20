@@ -1,5 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
 
+// Track whether we should force close (bypass close prevention)
+let forceClose = false
+
 export function registerWindowHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('window:minimize', () => {
     getWindow()?.minimize()
@@ -18,7 +21,20 @@ export function registerWindowHandlers(getWindow: () => BrowserWindow | null): v
     getWindow()?.close()
   })
 
+  ipcMain.handle('window:forceClose', () => {
+    forceClose = true
+    getWindow()?.close()
+  })
+
   ipcMain.handle('window:isMaximized', () => {
     return getWindow()?.isMaximized() ?? false
   })
+}
+
+export function shouldForceClose(): boolean {
+  return forceClose
+}
+
+export function resetForceClose(): void {
+  forceClose = false
 }

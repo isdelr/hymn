@@ -1,7 +1,7 @@
 {
   "name": "hymn",
   "private": true,
-  "version": "0.1.7",
+  "version": "0.1.10",
   "description": "A modern mod manager and editor for Hytale",
   "author": {
     "name": "isa",
@@ -29,8 +29,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "version": "node scripts/version.js",
-    "prebuild": "node scripts/version.js",
+    "release": "node scripts/release.js",
     "build": "tsc && vite build && electron-builder",
     "build:compile": "vite build",
     "typecheck": "tsc --noEmit",

@@ -27,12 +27,20 @@ const windowApi: HymnWindowApi = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
   close: () => ipcRenderer.invoke('window:close'),
+  forceClose: () => ipcRenderer.invoke('window:forceClose'),
   isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized)
     ipcRenderer.on('window:maximized-change', handler)
     return () => {
       ipcRenderer.removeListener('window:maximized-change', handler)
+    }
+  },
+  onCloseRequested: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('window:close-requested', handler)
+    return () => {
+      ipcRenderer.removeListener('window:close-requested', handler)
     }
   },
   getPlatform: () => process.platform as Platform,

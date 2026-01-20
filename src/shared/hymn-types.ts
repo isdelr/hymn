@@ -834,8 +834,10 @@ export interface HymnWindowApi {
   minimize: () => Promise<void>
   maximize: () => Promise<void>
   close: () => Promise<void>
+  forceClose: () => Promise<void>
   isMaximized: () => Promise<boolean>
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+  onCloseRequested: (callback: () => void) => () => void
   getPlatform: () => Platform
 }
 

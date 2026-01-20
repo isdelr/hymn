@@ -4,7 +4,7 @@ import path from 'node:path'
 import { readSetting, SETTINGS_KEYS } from './core/database'
 import { loadInstallPathOverride } from './services/InstallService'
 import { loadProfileSettings, ensureDefaultProfile } from './services/ProfileService'
-import { registerAllIpcHandlers } from './ipc'
+import { registerAllIpcHandlers, shouldForceClose, resetForceClose } from './ipc'
 import { watcherManager } from './fileWatchers'
 import type { ThemeMode } from '../src/shared/hymn-types'
 
@@ -87,10 +87,22 @@ function setupPermissions(): void {
 }
 
 /**
+ * Get title bar overlay config based on current theme.
+ */
+function getTitleBarOverlayConfig(isDark: boolean): Electron.TitleBarOverlay {
+  return {
+    color: isDark ? '#1a1b26' : '#ffffff',
+    symbolColor: isDark ? '#a9b1d6' : '#1a1b26',
+    height: 32
+  }
+}
+
+/**
  * Create the main browser window.
  */
 function createWindow(): void {
   const isMac = process.platform === 'darwin'
+  const isDark = nativeTheme.shouldUseDarkColors
 
   win = new BrowserWindow({
     width: 1400,
@@ -99,6 +111,7 @@ function createWindow(): void {
     minHeight: 600,
     frame: false,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: isMac ? false : getTitleBarOverlayConfig(isDark),
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -120,6 +133,27 @@ function createWindow(): void {
   })
   win.on('unmaximize', () => {
     win?.webContents.send('window:maximized', false)
+  })
+
+  // Update titleBarOverlay colors when theme changes (Windows/Linux only)
+  if (!isMac) {
+    nativeTheme.on('updated', () => {
+      const isDark = nativeTheme.shouldUseDarkColors
+      win?.setTitleBarOverlay?.(getTitleBarOverlayConfig(isDark))
+    })
+  }
+
+  // Handle close event - check for unsaved changes via IPC
+  win.on('close', (event) => {
+    if (shouldForceClose()) {
+      // Force close was requested, allow the window to close
+      resetForceClose()
+      return
+    }
+    if (win) {
+      event.preventDefault()
+      win.webContents.send('window:close-requested')
+    }
   })
 
   // Test active push message to Renderer-process

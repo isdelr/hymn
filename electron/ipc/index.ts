@@ -2,7 +2,7 @@ import { BrowserWindow } from 'electron'
 import { registerHymnHandlers } from './hymnHandlers'
 import { registerSettingsHandlers } from './settingsHandlers'
 import { registerThemeHandlers } from './themeHandlers'
-import { registerWindowHandlers } from './windowHandlers'
+import { registerWindowHandlers, shouldForceClose, resetForceClose } from './windowHandlers'
 import { registerWatcherHandlers } from './watcherHandlers'
 
 export function registerAllIpcHandlers(getWindow: () => BrowserWindow | null): void {
@@ -19,4 +19,6 @@ export {
   registerThemeHandlers,
   registerWindowHandlers,
   registerWatcherHandlers,
+  shouldForceClose,
+  resetForceClose,
 }

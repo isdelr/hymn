@@ -1,8 +1,9 @@
-import {useEffect} from 'react'
+import {useEffect, useState} from 'react'
 import {createRootRoute, Outlet, Link, useRouterState} from '@tanstack/react-router'
 import {Boxes, Settings, Sparkles, HelpCircle} from 'lucide-react'
-import {TitleBar} from '@/components/ui/TitleBar'
 import {cn} from '@/lib/utils'
+import {useDirtyFilesStore} from '@/stores'
+import {UnsavedChangesDialog} from '@/components/ui/UnsavedChangesDialog'
 import type {ThemeMode} from '@/shared/hymn-types'
 
 const sections = [
@@ -35,6 +36,10 @@ const sections = [
 function RootLayout() {
     const routerState = useRouterState()
     const currentPath = routerState.location.pathname
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+    const hasAnyDirtyFiles = useDirtyFilesStore((s) => s.hasAnyDirtyFiles)
+    const clearAllDirtyFiles = useDirtyFilesStore((s) => s.clearAllDirtyFiles)
+    const getDirtyFilePaths = useDirtyFilesStore((s) => s.getDirtyFilePaths)
 
     // Initialize and listen for theme changes
     useEffect(() => {
@@ -63,6 +68,23 @@ function RootLayout() {
         })
     }, [])
 
+    // Handle window close requests (native close button)
+    useEffect(() => {
+        return window.hymnWindow.onCloseRequested(() => {
+            if (hasAnyDirtyFiles()) {
+                setShowUnsavedDialog(true)
+            } else {
+                window.hymnWindow.forceClose()
+            }
+        })
+    }, [hasAnyDirtyFiles])
+
+    const handleDiscardAndClose = () => {
+        clearAllDirtyFiles()
+        setShowUnsavedDialog(false)
+        window.hymnWindow.forceClose()
+    }
+
     // Find active section meta for header
     const activeSectionMeta = sections.find((section) => {
         if (section.to === '/') {
@@ -73,9 +95,6 @@ function RootLayout() {
 
     return (
         <div className="flex h-screen flex-col bg-background text-foreground">
-            {/* Custom Titlebar */}
-            <TitleBar/>
-
             {/* Main app content */}
             <div className="relative flex flex-1 overflow-hidden">
                 {/* Sidebar Navigation */}
@@ -135,6 +154,13 @@ function RootLayout() {
                     </>
                 </main>
             </div>
+
+            <UnsavedChangesDialog
+                isOpen={showUnsavedDialog}
+                onClose={() => setShowUnsavedDialog(false)}
+                onDiscard={handleDiscardAndClose}
+                fileCount={getDirtyFilePaths().length}
+            />
         </div>
     )
 }
