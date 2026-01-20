@@ -313,14 +313,12 @@ async function main(): Promise<void> {
     }
   })
 
-  // Quit when all windows are closed (except on macOS)
+  // Quit when all windows are closed
   app.on('window-all-closed', () => {
     watcherManager.stopAllWatchers()
     globalShortcut.unregisterAll()
-    if (process.platform !== 'darwin') {
-      app.quit()
-      win = null
-    }
+    app.quit()
+    win = null
   })
 
   // Re-create window on macOS when clicking dock icon

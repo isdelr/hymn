@@ -26,7 +26,7 @@ async function getYauzl() {
 }
 import { getJdkInstallDir } from '../core/paths'
 import { writeSetting, SETTINGS_KEYS } from '../core/database'
-import type { JdkDownloadResult } from '../../src/shared/hymn-types'
+import type { JdkDownloadResult, JdkDownloadProgress } from '../../src/shared/hymn-types'
 
 const JDK_VERSION = '25'
 const JDK_BUILD = '25+3'
@@ -130,8 +130,8 @@ async function extractTarGz(tarPath: string, destDir: string): Promise<void> {
   })
 }
 
-function sendProgressUpdate(progress: number): void {
-  const win = BrowserWindow.getFocusedWindow()
+function sendProgressUpdate(progress: JdkDownloadProgress): void {
+  const win = BrowserWindow.getAllWindows()[0]
   if (win && !win.isDestroyed()) {
     win.webContents.send('jdk:download-progress', progress)
   }
@@ -156,7 +156,12 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
   downloadAbortController = new AbortController()
 
   try {
-    sendProgressUpdate(0)
+    sendProgressUpdate({
+      status: 'downloading',
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      message: 'Starting download...',
+    })
 
     // Download file
     const response = await fetch(downloadUrl, {
@@ -185,8 +190,12 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
       receivedLength += value.length
 
       if (contentLength > 0) {
-        const progress = Math.round((receivedLength / contentLength) * 80) // 0-80% for download
-        sendProgressUpdate(progress)
+        sendProgressUpdate({
+          status: 'downloading',
+          bytesDownloaded: receivedLength,
+          totalBytes: contentLength,
+          message: 'Downloading JDK...',
+        })
       }
     }
 
@@ -199,7 +208,12 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
     }
 
     await fs.writeFile(tempFile, data)
-    sendProgressUpdate(85) // Extraction phase
+    sendProgressUpdate({
+      status: 'extracting',
+      bytesDownloaded: receivedLength,
+      totalBytes: contentLength,
+      message: 'Extracting JDK...',
+    })
 
     // Extract
     if (isZip) {
@@ -210,7 +224,12 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
 
     // Clean up temp file
     await fs.unlink(tempFile)
-    sendProgressUpdate(95)
+    sendProgressUpdate({
+      status: 'extracting',
+      bytesDownloaded: receivedLength,
+      totalBytes: contentLength,
+      message: 'Verifying installation...',
+    })
 
     // Verify installation
     const javaBin = process.platform === 'win32'
@@ -223,7 +242,12 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
 
     // Save the managed JDK path
     await writeSetting(SETTINGS_KEYS.managedJdkPath, installDir)
-    sendProgressUpdate(100)
+    sendProgressUpdate({
+      status: 'complete',
+      bytesDownloaded: receivedLength,
+      totalBytes: contentLength,
+      message: 'JDK installed successfully',
+    })
 
     downloadAbortController = null
 

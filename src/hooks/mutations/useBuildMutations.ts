@@ -225,6 +225,9 @@ export function useDownloadJdk() {
     mutationFn: async () => {
       return await window.hymnSettings.downloadJdk()
     },
+    onMutate: () => {
+      toast.info('Starting JDK download...')
+    },
     onSuccess: (result) => {
       if (result.success) {
         queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedJdkPath })

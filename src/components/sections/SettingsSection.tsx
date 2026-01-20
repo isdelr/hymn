@@ -306,15 +306,17 @@ export function SettingsSection() {
                 <FolderOpen className="h-4 w-4 mr-1" />
                 Select
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownloadJdk}
-                disabled={downloadJdk.isPending}
-              >
-                <Download className="h-4 w-4 mr-1" />
-                Download
-              </Button>
+              {!isJdkFound && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadJdk}
+                  disabled={downloadJdk.isPending}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
+              )}
               {customJdkPath && (
                 <Button
                   variant="ghost"
