@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { queryKeys } from '../queries'
-import type { BuildPluginOptions, BuildPackOptions, BuildPluginResult, BuildPackResult, JdkDownloadResult } from '@/shared/hymn-types'
+import type { BuildPluginOptions, BuildPackOptions, BuildPluginResult, BuildPackResult, JdkDownloadResult, SupportedJdkVersion } from '@/shared/hymn-types'
 
 export function useBuildPlugin() {
   const queryClient = useQueryClient()
@@ -218,12 +218,17 @@ export function useSelectServerJarPath() {
   })
 }
 
+interface DownloadJdkParams {
+  version?: SupportedJdkVersion
+}
+
 export function useDownloadJdk() {
   const queryClient = useQueryClient()
 
-  return useMutation<JdkDownloadResult, Error>({
-    mutationFn: async () => {
-      return await window.hymnSettings.downloadJdk()
+  return useMutation<JdkDownloadResult, Error, DownloadJdkParams | void>({
+    mutationFn: async (params) => {
+      const version = params?.version
+      return await window.hymnSettings.downloadJdk(version)
     },
     onMutate: () => {
       toast.info('Starting JDK download...')

@@ -610,11 +610,54 @@ export interface JavaDependencyInfo {
 // JDK Download types
 export type JdkDownloadStatus = 'idle' | 'downloading' | 'extracting' | 'complete' | 'error'
 
+// Gradle version type (defined early for JDK mapping)
+export type GradleVersion = '9.3.0' | '8.12.0' | '8.5'
+
+// Supported JDK versions (LTS + latest)
+export const SUPPORTED_JDK_VERSIONS = [21, 23, 25] as const
+export type SupportedJdkVersion = typeof SUPPORTED_JDK_VERSIONS[number]
+export const DEFAULT_JDK_VERSION: SupportedJdkVersion = 21
+
+export interface JdkVersionOption {
+  value: SupportedJdkVersion
+  label: string
+  recommended?: boolean
+}
+
+export const JDK_VERSION_OPTIONS: JdkVersionOption[] = [
+  { value: 21, label: 'JDK 21 (LTS)', recommended: true },
+  { value: 23, label: 'JDK 23' },
+  { value: 25, label: 'JDK 25' },
+]
+
+// JDK to Gradle version mapping
+// Each JDK requires a minimum Gradle version that supports it
+export const JDK_GRADLE_MAPPING: Record<SupportedJdkVersion, GradleVersion> = {
+  21: '8.5',      // JDK 21 works with Gradle 8.5+
+  23: '8.12.0',   // JDK 23 requires Gradle 8.10+ (using 8.12.0 for stability)
+  25: '9.3.0',    // JDK 25 requires Gradle 9.x
+}
+
+/**
+ * Get the recommended Gradle version for a given JDK major version.
+ * Falls back to latest if version not in mapping.
+ */
+export function getGradleVersionForJdk(jdkMajorVersion: number): GradleVersion {
+  if (jdkMajorVersion in JDK_GRADLE_MAPPING) {
+    return JDK_GRADLE_MAPPING[jdkMajorVersion as SupportedJdkVersion]
+  }
+  // For unknown/newer JDK versions, use latest Gradle
+  if (jdkMajorVersion >= 25) return '9.3.0'
+  if (jdkMajorVersion >= 23) return '8.12.0'
+  return '8.5'
+}
+
 export interface JdkDownloadProgress {
   status: JdkDownloadStatus
   bytesDownloaded: number
   totalBytes: number
   message: string
+  version?: string // The version being downloaded
 }
 
 export interface JdkDownloadResult {
@@ -623,9 +666,6 @@ export interface JdkDownloadResult {
   version?: string
   error?: string
 }
-
-// Gradle version type
-export type GradleVersion = '9.3.0' | '8.12.0' | '8.5'
 
 // Hytale installation dependency types
 export type HytaleDependencyStatus = 'found' | 'missing'
@@ -866,7 +906,7 @@ export interface HymnSettingsApi {
   selectJdkPath: () => Promise<string | null>
   // Managed JDK (auto-downloaded)
   getManagedJdkPath: () => Promise<string | null>
-  downloadJdk: () => Promise<JdkDownloadResult>
+  downloadJdk: (version?: SupportedJdkVersion) => Promise<JdkDownloadResult>
   cancelJdkDownload: () => Promise<void>
   onJdkDownloadProgress: (callback: (progress: JdkDownloadProgress) => void) => () => void
   // HytaleServer.jar path configuration

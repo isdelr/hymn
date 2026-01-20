@@ -39,9 +39,9 @@ export function JdkDownloadProgress({ progress }: JdkDownloadProgressProps) {
         )}
         <div className="flex-1">
           <div className="font-medium text-sm">
-            {isDownloading && 'Downloading JDK...'}
-            {isExtracting && 'Extracting JDK...'}
-            {isComplete && 'JDK Installed'}
+            {isDownloading && `Downloading JDK${progress.version ? ` ${progress.version}` : ''}...`}
+            {isExtracting && `Extracting JDK${progress.version ? ` ${progress.version}` : ''}...`}
+            {isComplete && `JDK${progress.version ? ` ${progress.version}` : ''} Installed`}
             {isError && 'Download Failed'}
           </div>
           <div className="text-xs text-muted-foreground">

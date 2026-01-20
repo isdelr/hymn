@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Download, FolderOpen, ExternalLink } from 'lucide-react'
+import { Download, FolderOpen, ExternalLink, ChevronDown } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -8,8 +8,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { JdkDownloadProgress } from './JdkDownloadProgress'
-import type { JdkDownloadProgress as JdkDownloadProgressType } from '@/shared/hymn-types'
+import type { JdkDownloadProgress as JdkDownloadProgressType, SupportedJdkVersion } from '@/shared/hymn-types'
+import { JDK_VERSION_OPTIONS, DEFAULT_JDK_VERSION } from '@/shared/hymn-types'
 import { useDownloadJdk, useSelectJdkPath } from '@/hooks/mutations'
 
 interface JdkSetupDialogProps {
@@ -20,6 +27,7 @@ interface JdkSetupDialogProps {
 
 export function JdkSetupDialog({ open, onOpenChange, onComplete }: JdkSetupDialogProps) {
   const [downloadProgress, setDownloadProgress] = useState<JdkDownloadProgressType | null>(null)
+  const [selectedVersion, setSelectedVersion] = useState<SupportedJdkVersion>(DEFAULT_JDK_VERSION)
   const downloadJdk = useDownloadJdk()
   const selectJdkPath = useSelectJdkPath()
 
@@ -45,8 +53,10 @@ export function JdkSetupDialog({ open, onOpenChange, onComplete }: JdkSetupDialo
   }, [open, onOpenChange, onComplete])
 
   const handleDownload = () => {
-    downloadJdk.mutate()
+    downloadJdk.mutate({ version: selectedVersion })
   }
+
+  const selectedOption = JDK_VERSION_OPTIONS.find(opt => opt.value === selectedVersion) || JDK_VERSION_OPTIONS[0]
 
   const handleSelectPath = async () => {
     const result = await selectJdkPath.mutateAsync()
@@ -57,7 +67,7 @@ export function JdkSetupDialog({ open, onOpenChange, onComplete }: JdkSetupDialo
   }
 
   const handleOpenAdoptium = () => {
-    window.open('https://adoptium.net/temurin/releases/?version=25', '_blank')
+    window.open('https://adoptium.net/temurin/releases/', '_blank')
   }
 
   const isDownloading = downloadProgress?.status === 'downloading' || downloadProgress?.status === 'extracting'
@@ -76,23 +86,54 @@ export function JdkSetupDialog({ open, onOpenChange, onComplete }: JdkSetupDialo
           <JdkDownloadProgress progress={downloadProgress} />
         ) : (
           <div className="space-y-3 py-2">
-            {/* Option 1: Download */}
-            <button
-              onClick={handleDownload}
-              disabled={downloadJdk.isPending}
-              className="w-full flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left"
-            >
-              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
-                <Download className="h-5 w-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm">Download JDK</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  Automatically download and install Eclipse Temurin JDK 25
+            {/* Option 1: Download with version selector */}
+            <div className="w-full rounded-lg border border-border p-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+                  <Download className="h-5 w-5" />
                 </div>
-                <div className="text-xs text-emerald-500 mt-1">Recommended</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">Download JDK</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Automatically download and install Eclipse Temurin JDK
+                  </div>
+                  <div className="text-xs text-emerald-500 mt-1">Recommended</div>
+                </div>
               </div>
-            </button>
+              <div className="mt-3 flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      {selectedOption.label}
+                      <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {JDK_VERSION_OPTIONS.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => setSelectedVersion(option.value)}
+                        className={selectedVersion === option.value ? 'bg-muted' : ''}
+                      >
+                        {option.label}
+                        {option.recommended && (
+                          <span className="ml-2 text-xs text-emerald-500">Recommended</span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  onClick={handleDownload}
+                  disabled={downloadJdk.isPending}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </Button>
+              </div>
+            </div>
 
             {/* Option 2: Select Existing */}
             <button

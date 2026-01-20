@@ -1,7 +1,36 @@
+import { spawn } from 'node:child_process'
+import path from 'node:path'
 import { ipcMain, dialog, app } from 'electron'
 import { readSetting, writeSetting, SETTINGS_KEYS } from '../core/database'
 import { downloadAndInstallJdk, cancelJdkDownload } from '../services/JdkDownloadService'
-import type { ThemeMode, ModSortOrder, GradleVersion } from '../../src/shared/hymn-types'
+import type { ThemeMode, ModSortOrder, GradleVersion, SupportedJdkVersion } from '../../src/shared/hymn-types'
+import { getGradleVersionForJdk } from '../../src/shared/hymn-types'
+
+/**
+ * Get Java major version from a JDK path.
+ * Returns null if version cannot be determined.
+ */
+async function getJavaMajorVersion(jdkPath: string): Promise<number | null> {
+  const javaBinPath = process.platform === 'win32'
+    ? path.join(jdkPath, 'bin', 'java.exe')
+    : path.join(jdkPath, 'bin', 'java')
+
+  return new Promise((resolve) => {
+    const child = spawn(javaBinPath, ['-version'], { shell: false })
+    let stderr = ''
+    child.stderr?.on('data', (data) => { stderr += data.toString() })
+    child.on('error', () => resolve(null))
+    child.on('close', () => {
+      // Java version is printed to stderr in format: version "21.0.1" or version "25"
+      const match = stderr.match(/version "(\d+)/)
+      if (match) {
+        resolve(parseInt(match[1], 10))
+      } else {
+        resolve(null)
+      }
+    })
+  })
+}
 
 export function registerSettingsHandlers(): void {
   // Theme settings
@@ -67,6 +96,14 @@ export function registerSettingsHandlers(): void {
     }
     const selectedPath = result.filePaths[0]
     await writeSetting(SETTINGS_KEYS.jdkPath, selectedPath)
+
+    // Auto-configure Gradle version based on detected JDK version
+    const majorVersion = await getJavaMajorVersion(selectedPath)
+    if (majorVersion !== null) {
+      const gradleVersion = getGradleVersionForJdk(majorVersion)
+      await writeSetting(SETTINGS_KEYS.gradleVersion, gradleVersion)
+    }
+
     return selectedPath
   })
 
@@ -101,8 +138,8 @@ export function registerSettingsHandlers(): void {
     return readSetting(SETTINGS_KEYS.managedJdkPath)
   })
 
-  ipcMain.handle('settings:downloadJdk', async () => {
-    return downloadAndInstallJdk()
+  ipcMain.handle('settings:downloadJdk', async (_event, version?: SupportedJdkVersion) => {
+    return downloadAndInstallJdk(version)
   })
 
   ipcMain.handle('settings:cancelJdkDownload', async () => {

@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
-import type { ThemeMode, ModSortOrder, GradleVersion, JdkDownloadProgress } from '@/shared/hymn-types'
+import type { ThemeMode, ModSortOrder, JdkDownloadProgress } from '@/shared/hymn-types'
 
 // React Query hooks
 import { useInstallInfo, useTheme, useModSortOrder, useServerJarPath, useDependencies, useGradleVersion, useJdkPath, useAppVersion } from '@/hooks/queries'
@@ -31,7 +31,6 @@ import {
   useSetModSortOrder,
   useSelectServerJarPath,
   useSetServerJarPath,
-  useSetGradleVersion,
   useSelectJdkPath,
   useDownloadJdk,
   useCancelJdkDownload,
@@ -118,7 +117,6 @@ export function SettingsSection() {
   const setModSortOrder = useSetModSortOrder()
   const selectServerJarPath = useSelectServerJarPath()
   const setServerJarPath = useSetServerJarPath()
-  const setGradleVersion = useSetGradleVersion()
   const selectJdkPath = useSelectJdkPath()
   const downloadJdk = useDownloadJdk()
   const cancelJdkDownload = useCancelJdkDownload()
@@ -150,10 +148,6 @@ export function SettingsSection() {
 
   const handleClearServerJarPath = () => {
     setServerJarPath.mutate(null)
-  }
-
-  const handleGradleVersionChange = (value: GradleVersion) => {
-    setGradleVersion.mutate(value)
   }
 
   const handleSelectJdkPath = () => {
@@ -331,7 +325,7 @@ export function SettingsSection() {
         </div>
       </SettingRow>
 
-      {/* Row 4: Gradle Version */}
+      {/* Row 4: Gradle Version (auto-configured) */}
       <SettingRow>
         <IconBox colorClass="bg-teal-500/10">
           <Cog className="h-5 w-5 text-teal-500" />
@@ -339,19 +333,9 @@ export function SettingsSection() {
         <div className="flex-1 min-w-0">
           <span className="text-sm font-medium">Gradle Version</span>
           <p className="text-xs text-muted-foreground">
-            For new plugin projects
+            {gradleVersion} - auto-configured for JDK compatibility
           </p>
         </div>
-        <Select value={gradleVersion} onValueChange={(v) => handleGradleVersionChange(v as GradleVersion)}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="9.3.0">9.3.0 (Latest)</SelectItem>
-            <SelectItem value="8.12.0">8.12.0</SelectItem>
-            <SelectItem value="8.5">8.5</SelectItem>
-          </SelectContent>
-        </Select>
       </SettingRow>
 
       {/* Row 5: Theme */}

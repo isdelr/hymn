@@ -26,43 +26,48 @@ async function getYauzl() {
 }
 import { getJdkInstallDir } from '../core/paths'
 import { writeSetting, SETTINGS_KEYS } from '../core/database'
-import type { JdkDownloadResult, JdkDownloadProgress } from '../../src/shared/hymn-types'
-
-const JDK_VERSION = '25'
-const JDK_BUILD = '25+3'
+import type { JdkDownloadResult, JdkDownloadProgress, SupportedJdkVersion } from '../../src/shared/hymn-types'
+import { DEFAULT_JDK_VERSION, SUPPORTED_JDK_VERSIONS, getGradleVersionForJdk } from '../../src/shared/hymn-types'
 
 // Module-level state
 let downloadAbortController: AbortController | null = null
 
-function getJdkDownloadUrl(): string {
+interface JdkDownloadInfo {
+  url: string
+  version: string
+  size: number
+}
+
+/**
+ * Fetch JDK download info from Adoptium API
+ */
+async function getJdkDownloadInfo(majorVersion: SupportedJdkVersion): Promise<JdkDownloadInfo> {
   const platform = process.platform
   const arch = process.arch
 
-  let osName: string
-  let archName: string
-  let ext: string
+  const os = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'mac' : 'linux'
+  const architecture = arch === 'arm64' ? 'aarch64' : 'x64'
 
-  if (platform === 'win32') {
-    osName = 'windows'
-    ext = 'zip'
-  } else if (platform === 'darwin') {
-    osName = 'macos'
-    ext = 'tar.gz'
-  } else {
-    osName = 'linux'
-    ext = 'tar.gz'
+  // Use Adoptium API to get latest release
+  const apiUrl = `https://api.adoptium.net/v3/assets/latest/${majorVersion}/hotspot?os=${os}&architecture=${architecture}&image_type=jdk`
+
+  const response = await fetch(apiUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch JDK info: ${response.status} ${response.statusText}`)
   }
 
-  if (arch === 'x64') {
-    archName = 'x64'
-  } else if (arch === 'arm64') {
-    archName = 'aarch64'
-  } else {
-    archName = 'x64' // Default to x64
+  const data = await response.json()
+  const binary = data[0]?.binary
+
+  if (!binary?.package?.link) {
+    throw new Error(`No JDK ${majorVersion} release found for ${os}/${architecture}`)
   }
 
-  // Using Adoptium (Eclipse Temurin) JDK 25 EA
-  return `https://github.com/adoptium/temurin25-binaries/releases/download/jdk-${JDK_BUILD}/OpenJDK25U-jdk_${archName}_${osName}_hotspot_${JDK_VERSION}_3.${ext}`
+  return {
+    url: binary.package.link,
+    version: data[0].version.semver || `${majorVersion}`,
+    size: binary.package.size || 0,
+  }
 }
 
 async function extractZip(zipPath: string, destDir: string): Promise<void> {
@@ -138,20 +143,26 @@ function sendProgressUpdate(progress: JdkDownloadProgress): void {
 }
 
 /**
+ * Validate that the provided version is supported
+ */
+function validateJdkVersion(version: number | undefined): SupportedJdkVersion {
+  if (version === undefined) {
+    return DEFAULT_JDK_VERSION
+  }
+  if (SUPPORTED_JDK_VERSIONS.includes(version as SupportedJdkVersion)) {
+    return version as SupportedJdkVersion
+  }
+  return DEFAULT_JDK_VERSION
+}
+
+/**
  * Download and install JDK.
  */
-export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
+export async function downloadAndInstallJdk(
+  majorVersion?: SupportedJdkVersion
+): Promise<JdkDownloadResult> {
+  const version = validateJdkVersion(majorVersion)
   const installDir = getJdkInstallDir()
-  const downloadUrl = getJdkDownloadUrl()
-
-  // Clean up existing installation
-  if (await pathExists(installDir)) {
-    await removePath(installDir)
-  }
-  await ensureDir(installDir)
-
-  const isZip = downloadUrl.endsWith('.zip')
-  const tempFile = path.join(installDir, isZip ? 'jdk.zip' : 'jdk.tar.gz')
 
   downloadAbortController = new AbortController()
 
@@ -160,7 +171,30 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
       status: 'downloading',
       bytesDownloaded: 0,
       totalBytes: 0,
-      message: 'Starting download...',
+      message: `Fetching JDK ${version} info...`,
+      version: `${version}`,
+    })
+
+    // Fetch download info from Adoptium API
+    const downloadInfo = await getJdkDownloadInfo(version)
+    const downloadUrl = downloadInfo.url
+    const fullVersion = downloadInfo.version
+
+    // Clean up existing installation
+    if (await pathExists(installDir)) {
+      await removePath(installDir)
+    }
+    await ensureDir(installDir)
+
+    const isZip = downloadUrl.endsWith('.zip')
+    const tempFile = path.join(installDir, isZip ? 'jdk.zip' : 'jdk.tar.gz')
+
+    sendProgressUpdate({
+      status: 'downloading',
+      bytesDownloaded: 0,
+      totalBytes: downloadInfo.size,
+      message: `Downloading JDK ${fullVersion}...`,
+      version: fullVersion,
     })
 
     // Download file
@@ -172,7 +206,7 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
       throw new Error(`Download failed: ${response.status} ${response.statusText}`)
     }
 
-    const contentLength = parseInt(response.headers.get('content-length') || '0', 10)
+    const contentLength = downloadInfo.size || parseInt(response.headers.get('content-length') || '0', 10)
     const reader = response.body?.getReader()
 
     if (!reader) {
@@ -194,7 +228,8 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
           status: 'downloading',
           bytesDownloaded: receivedLength,
           totalBytes: contentLength,
-          message: 'Downloading JDK...',
+          message: `Downloading JDK ${fullVersion}...`,
+          version: fullVersion,
         })
       }
     }
@@ -212,7 +247,8 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
       status: 'extracting',
       bytesDownloaded: receivedLength,
       totalBytes: contentLength,
-      message: 'Extracting JDK...',
+      message: `Extracting JDK ${fullVersion}...`,
+      version: fullVersion,
     })
 
     // Extract
@@ -229,6 +265,7 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
       bytesDownloaded: receivedLength,
       totalBytes: contentLength,
       message: 'Verifying installation...',
+      version: fullVersion,
     })
 
     // Verify installation
@@ -242,11 +279,17 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
 
     // Save the managed JDK path
     await writeSetting(SETTINGS_KEYS.managedJdkPath, installDir)
+
+    // Auto-configure Gradle version based on JDK version
+    const gradleVersion = getGradleVersionForJdk(version)
+    await writeSetting(SETTINGS_KEYS.gradleVersion, gradleVersion)
+
     sendProgressUpdate({
       status: 'complete',
       bytesDownloaded: receivedLength,
       totalBytes: contentLength,
-      message: 'JDK installed successfully',
+      message: `JDK ${fullVersion} installed successfully`,
+      version: fullVersion,
     })
 
     downloadAbortController = null
@@ -254,18 +297,23 @@ export async function downloadAndInstallJdk(): Promise<JdkDownloadResult> {
     return {
       success: true,
       jdkPath: installDir,
-      version: `${JDK_VERSION}`,
+      version: fullVersion,
     }
   } catch (error) {
+    downloadAbortController = null
+
     // Clean up on error
-    if (await pathExists(tempFile)) {
-      await fs.unlink(tempFile).catch(() => {})
+    const tempZip = path.join(installDir, 'jdk.zip')
+    const tempTarGz = path.join(installDir, 'jdk.tar.gz')
+    if (await pathExists(tempZip)) {
+      await fs.unlink(tempZip).catch(() => {})
+    }
+    if (await pathExists(tempTarGz)) {
+      await fs.unlink(tempTarGz).catch(() => {})
     }
     if (await pathExists(installDir)) {
       await removePath(installDir).catch(() => {})
     }
-
-    downloadAbortController = null
 
     if (error instanceof Error && error.name === 'AbortError') {
       return {

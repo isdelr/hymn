@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform } from '../src/shared/hymn-types'
+import type { HymnApi, HymnWindowApi, HymnThemeApi, HymnSettingsApi, HymnFileWatcherApi, ThemeMode, ModSortOrder, FileChangeEvent, DirectoryChangeEvent, WorldConfigChangeEvent, JdkDownloadProgress, GradleVersion, RestoreDeletedModOptions, SelectAssetFileOptions, ListPackLanguagesOptions, GetPackTranslationsOptions, SavePackTranslationsOptions, CreatePackLanguageOptions, Platform, SupportedJdkVersion } from '../src/shared/hymn-types'
 
 // Input validation helpers for preload security
 function isNonEmptyString(value: unknown): value is string {
@@ -172,7 +172,7 @@ const settingsApi: HymnSettingsApi = {
   selectJdkPath: () => ipcRenderer.invoke('settings:selectJdkPath'),
   // Managed JDK (auto-downloaded)
   getManagedJdkPath: () => ipcRenderer.invoke('settings:getManagedJdkPath'),
-  downloadJdk: () => ipcRenderer.invoke('settings:downloadJdk'),
+  downloadJdk: (version?: SupportedJdkVersion) => ipcRenderer.invoke('settings:downloadJdk', version),
   cancelJdkDownload: () => ipcRenderer.invoke('settings:cancelJdkDownload'),
   onJdkDownloadProgress: (callback: (progress: JdkDownloadProgress) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: JdkDownloadProgress) => callback(progress)

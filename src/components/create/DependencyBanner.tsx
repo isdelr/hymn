@@ -79,7 +79,7 @@ export function DependencyBanner({ onOpenSettings }: DependencyBannerProps) {
                   asChild
                 >
                   <a
-                    href="https://adoptium.net/temurin/releases/?version=25"
+                    href="https://adoptium.net/temurin/releases/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
