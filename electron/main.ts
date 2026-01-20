@@ -23,6 +23,10 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 let win: BrowserWindow | null = null
 
 // Content Security Policy configuration
+// - 'unsafe-eval' in dev: Required for Vite HMR
+// - 'unsafe-inline' for styles: Required for Tailwind CSS
+// - 'img-src https:' is intentionally broad to allow mod icons/images from external sources
+// - connect-src localhost in dev: Required for Vite dev server communication
 const DEVELOPMENT_CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval'",
@@ -36,6 +40,7 @@ const DEVELOPMENT_CSP = [
   "frame-ancestors 'none'",
 ].join('; ')
 
+// Production CSP removes unsafe-eval and adds hardening directives
 const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -51,14 +56,16 @@ const PRODUCTION_CSP = [
   "block-all-mixed-content",
 ].join('; ')
 
-// Allowed domains for external links
+// Allowed domains for external links opened via shell.openExternal()
+// Note: Backend fetches (e.g., Gradle downloads from services.gradle.org) bypass CSP
+// as they occur in the main process, not the renderer
 const ALLOWED_EXTERNAL_DOMAINS = new Set([
-  'github.com',
-  'hytale.com',
-  'hypixelstudios.com',
-  'discord.gg',
-  'discord.com',
-  'docs.hytale.com',
+  'github.com',        // JDK downloads, project links
+  'hytale.com',        // Hytale download link in Settings
+  'hypixelstudios.com', // Official Hytale developer
+  'discord.gg',        // Community links
+  'discord.com',       // Community links
+  'docs.hytale.com',   // Hytale documentation
 ])
 
 /**
@@ -204,6 +211,15 @@ function createWindow(): void {
     if (win) {
       event.preventDefault()
       win.webContents.send('window:close-requested')
+
+      // Failsafe: if renderer doesn't respond within 3 seconds, force close
+      // This handles cases where the renderer is broken or unresponsive
+      setTimeout(() => {
+        if (win && !shouldForceClose()) {
+          console.warn('Renderer did not respond to close request, forcing close')
+          win.destroy()
+        }
+      }, 3000)
     }
   })
 
