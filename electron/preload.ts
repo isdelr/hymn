@@ -251,6 +251,7 @@ const updateApi: HymnUpdateApi = {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  downloadAndInstall: () => ipcRenderer.invoke('update:downloadAndInstall'),
   onUpdateStatus: (callback: (info: UpdateInfo) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info)
     ipcRenderer.on('update:status-changed', handler)

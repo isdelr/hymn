@@ -61,3 +61,20 @@ export function useInstallUpdate() {
     },
   })
 }
+
+/**
+ * Hook to download and install update in one action (for one-click UX)
+ */
+export function useDownloadAndInstall() {
+  return useMutation({
+    mutationFn: async () => {
+      await window.hymnUpdate.downloadAndInstall()
+    },
+    onMutate: () => {
+      toast.info('Updating... The app will restart automatically.')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to update')
+    },
+  })
+}

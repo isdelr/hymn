@@ -1019,6 +1019,7 @@ export interface HymnUpdateApi {
   checkForUpdates: () => Promise<UpdateInfo>
   downloadUpdate: () => Promise<void>
   installUpdate: () => void
+  downloadAndInstall: () => Promise<void>
   onUpdateStatus: (callback: (info: UpdateInfo) => void) => () => void
 }
 

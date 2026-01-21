@@ -64,4 +64,5 @@ export {
   useCheckForUpdates,
   useDownloadUpdate,
   useInstallUpdate,
+  useDownloadAndInstall,
 } from './useUpdateMutations'

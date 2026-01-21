@@ -2,13 +2,12 @@ import { X, Download, RotateCcw, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useUpdateInfo } from '@/hooks/queries'
-import { useDownloadUpdate, useInstallUpdate } from '@/hooks/mutations'
+import { useDownloadAndInstall } from '@/hooks/mutations'
 import { useUpdateStore } from '@/stores'
 
 export function UpdateBanner() {
   const { data: updateInfo } = useUpdateInfo()
-  const downloadUpdate = useDownloadUpdate()
-  const installUpdate = useInstallUpdate()
+  const downloadAndInstall = useDownloadAndInstall()
   const { dismissVersion, isDismissed } = useUpdateStore()
 
   // Don't render if no data, idle, checking, not available, or error
@@ -34,12 +33,8 @@ export function UpdateBanner() {
     }
   }
 
-  const handleDownload = () => {
-    downloadUpdate.mutate()
-  }
-
-  const handleInstall = () => {
-    installUpdate.mutate()
+  const handleUpdate = () => {
+    downloadAndInstall.mutate()
   }
 
   const downloadPercent = updateInfo.progress?.percent ?? 0
@@ -75,27 +70,24 @@ export function UpdateBanner() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isAvailable && (
+          {(isAvailable || isDownloaded) && (
             <Button
               size="sm"
               variant="default"
-              onClick={handleDownload}
-              disabled={downloadUpdate.isPending}
+              onClick={handleUpdate}
+              disabled={downloadAndInstall.isPending}
             >
-              <Download className="h-4 w-4 mr-1" />
-              Download
-            </Button>
-          )}
-
-          {isDownloaded && (
-            <Button
-              size="sm"
-              variant="default"
-              onClick={handleInstall}
-              disabled={installUpdate.isPending}
-            >
-              <RotateCcw className="h-4 w-4 mr-1" />
-              Restart Now
+              {isDownloaded ? (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Restart to Update
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-1" />
+                  Update
+                </>
+              )}
             </Button>
           )}
 

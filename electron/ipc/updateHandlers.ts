@@ -4,6 +4,7 @@ import {
   checkForUpdates,
   downloadUpdate,
   installUpdate,
+  downloadAndInstall,
 } from '../services/UpdateService'
 
 export function registerUpdateHandlers(): void {
@@ -25,5 +26,10 @@ export function registerUpdateHandlers(): void {
   // Quit and install the update
   ipcMain.handle('update:install', () => {
     installUpdate()
+  })
+
+  // Download and install in one action
+  ipcMain.handle('update:downloadAndInstall', async () => {
+    await downloadAndInstall()
   })
 }

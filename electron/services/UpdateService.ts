@@ -169,11 +169,36 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 /**
- * Quit the app and install the downloaded update
+ * Quit the app and install the downloaded update silently
  */
 export function installUpdate(): void {
   if (currentInfo.status !== 'downloaded') {
     throw new Error('No update downloaded to install')
   }
-  autoUpdater.quitAndInstall()
+
+  setImmediate(() => {
+    app.removeAllListeners('window-all-closed')
+    // isSilent=true, isForceRunAfter=true
+    autoUpdater.quitAndInstall(true, true)
+  })
+}
+
+/**
+ * Download and install update in one action (for one-click UX)
+ */
+export async function downloadAndInstall(): Promise<void> {
+  if (currentInfo.status === 'downloaded') {
+    installUpdate()
+    return
+  }
+
+  if (currentInfo.status !== 'available') {
+    throw new Error('No update available')
+  }
+
+  autoUpdater.once('update-downloaded', () => {
+    setTimeout(() => installUpdate(), 500)
+  })
+
+  await autoUpdater.downloadUpdate()
 }

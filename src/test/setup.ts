@@ -72,6 +72,7 @@ if (!window.hymnUpdate) {
     }),
     downloadUpdate: vi.fn().mockResolvedValue(undefined),
     installUpdate: vi.fn(),
+    downloadAndInstall: vi.fn().mockResolvedValue(undefined),
     onUpdateStatus: vi.fn().mockReturnValue(() => {}),
   }
 }
