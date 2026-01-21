@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-20
+
+### Added
+- Seamless one-click auto-updates (VS Code-like experience)
+  - Single "Update" button downloads, installs silently, and restarts automatically
+  - Silent NSIS installer on Windows (no wizard dialogs)
+- Extended project templates for packs and plugins
+- macOS ZIP target for auto-update support
+
+### Changed
+- Bundle Monaco Editor locally with Vite worker support for better performance
+- Schema-driven properties panel for asset editor
+
+### Fixed
+- Use configured JDK path instead of system JAVA_HOME for builds
+- Prevent Monaco Editor flicker on file save
+
 ## [0.2.2] - 2026-01-20
 
 ### Changed
@@ -82,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Context isolation enabled
 - IPC whitelisting for secure main/renderer communication
 
-[Unreleased]: https://github.com/isdelr/hymn/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/isdelr/hymn/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/isdelr/hymn/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/isdelr/hymn/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/isdelr/hymn/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/isdelr/hymn/compare/v0.1.4...v0.2.0
