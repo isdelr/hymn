@@ -19,6 +19,8 @@
  * a Java Language Server (e.g., Eclipse JDT LS) via monaco-languageclient.
  */
 
+import { loader } from '@monaco-editor/react'
+import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
@@ -45,3 +47,7 @@ self.MonacoEnvironment = {
     return new editorWorker()
   },
 }
+
+// Configure @monaco-editor/react loader to use local Monaco instance
+// This prevents CDN loading attempts which fail in Electron due to CSP
+loader.config({ monaco })

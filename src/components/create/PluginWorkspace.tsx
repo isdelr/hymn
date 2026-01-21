@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { ProjectEntry, JavaSourceFile, ServerAsset, ServerAssetTemplate, BuildPluginResult, FileChangeEvent } from '@/shared/hymn-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -115,6 +115,9 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
     // Reload trigger for when external file changes are detected
     const [editorReloadTrigger, setEditorReloadTrigger] = useState(0)
 
+    // Track recent saves to prevent flickering when file watcher detects our own saves
+    const recentSaveRef = useRef<{ path: string; time: number } | null>(null)
+
     // File watcher - handles external file changes and auto-refreshes data
     const handleFileChange = useCallback((event: FileChangeEvent) => {
         // Handle editor reload for any file that matches the selected file
@@ -123,7 +126,15 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
                 // File was deleted or renamed - clear selection
                 setSelectedFile(null)
             } else {
-                // File content changed - trigger editor reload
+                // Skip reload if this is a self-save (within 2 seconds)
+                const recentSave = recentSaveRef.current
+                if (recentSave &&
+                    recentSave.path === event.filePath &&
+                    Date.now() - recentSave.time < 2000) {
+                    recentSaveRef.current = null
+                    return // Skip reload - we already have the correct content
+                }
+                // File content changed externally - trigger editor reload
                 setEditorReloadTrigger((prev) => prev + 1)
             }
         }
@@ -192,6 +203,8 @@ export function PluginWorkspace({ project, onBack, onProjectUpdated }: PluginWor
 
     const handleSaveFile = async (content: string) => {
         if (!selectedFile) return
+        // Track save to prevent flicker when file watcher detects our own save
+        recentSaveRef.current = { path: selectedFile.absolutePath, time: Date.now() }
         await saveJavaFile.mutateAsync({
             filePath: selectedFile.absolutePath,
             content
