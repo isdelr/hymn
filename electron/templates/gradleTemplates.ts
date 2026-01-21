@@ -2,7 +2,11 @@
  * Generate settings.gradle content.
  */
 export function generateSettingsGradle(projectName: string): string {
-  return `rootProject.name = '${projectName}'
+  return `plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
+}
+
+rootProject.name = '${projectName}'
 `
 }
 

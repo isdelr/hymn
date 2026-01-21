@@ -118,7 +118,6 @@ function CreateIndexPage() {
           version: projectVersion || '0.0.1',
           description: projectDescription || undefined,
           authorName: authorName || undefined,
-          includesAssetPack: true,
           patchline: hytaleVersion,
         })
         createdPath = result.path

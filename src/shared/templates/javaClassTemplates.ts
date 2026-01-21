@@ -9,6 +9,10 @@ export type JavaClassIconName =
   | 'Radio'
   | 'Puzzle'
   | 'FileCode'
+  | 'Layout'
+  | 'Settings'
+  | 'Zap'
+  | 'MousePointer'
 
 /**
  * Java class template metadata.
@@ -57,6 +61,34 @@ export const JAVA_CLASS_TEMPLATES: JavaClassTemplateInfo[] = [
     description: 'Empty Java class',
     iconName: 'FileCode',
     suggestedPackage: '',
+  },
+  {
+    id: 'gui_page',
+    label: 'GUI Page',
+    description: 'Custom UI page handler',
+    iconName: 'Layout',
+    suggestedPackage: 'gui',
+  },
+  {
+    id: 'config',
+    label: 'Configuration',
+    description: 'Plugin settings manager',
+    iconName: 'Settings',
+    suggestedPackage: 'config',
+  },
+  {
+    id: 'event_system',
+    label: 'Event System',
+    description: 'Game event processor',
+    iconName: 'Zap',
+    suggestedPackage: 'systems',
+  },
+  {
+    id: 'interaction',
+    label: 'Item Interaction',
+    description: 'Custom item behavior',
+    iconName: 'MousePointer',
+    suggestedPackage: 'interactions',
   },
 ]
 

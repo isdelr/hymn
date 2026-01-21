@@ -16,7 +16,7 @@ async function getYauzl() {
   return yauzlModule
 }
 import { ensureSafeRelativePath, ensureServerRelativePath, isWithinPath } from '../utils/security'
-import { SERVER_ASSET_TEMPLATE_BUILDERS, normalizeAssetId, formatAssetLabel } from '../templates/serverAssetBuilders'
+import { SERVER_ASSET_TEMPLATE_BUILDERS, UI_FILE_TEMPLATE_BUILDERS, isUiFileTemplate, getTemplateFileExtension, normalizeAssetId, formatAssetLabel } from '../templates/serverAssetBuilders'
 import { resolveInstallInfo } from './InstallService'
 import type {
   ServerAsset,
@@ -62,6 +62,14 @@ const vanillaZipState: VanillaZipState = {
  */
 function inferAssetKind(relativePath: string): ServerAsset['kind'] {
   const lowerPath = relativePath.toLowerCase()
+  // Check more specific patterns first before broader ones
+  // Hitboxes, groups, qualities, animations, interactions are within /item/ so check first
+  if (lowerPath.includes('/hitbox') || lowerPath.includes('\\hitbox')) return 'hitbox'
+  if (lowerPath.includes('/groups/') || lowerPath.includes('\\groups\\')) return 'group'
+  if (lowerPath.includes('/qualities/') || lowerPath.includes('\\qualities\\')) return 'quality'
+  if (lowerPath.includes('/animations/') || lowerPath.includes('\\animations\\')) return 'animation'
+  if (lowerPath.includes('/interactions/') || lowerPath.includes('\\interactions\\')) return 'interaction'
+  // Main asset types
   if (lowerPath.includes('/item/') || lowerPath.includes('\\item\\')) return 'item'
   if (lowerPath.includes('/block/') || lowerPath.includes('\\block\\')) return 'block'
   if (lowerPath.includes('/entity/') || lowerPath.includes('\\entity\\')) return 'entity'
@@ -71,12 +79,13 @@ function inferAssetKind(relativePath: string): ServerAsset['kind'] {
   if (lowerPath.includes('/texture/') || lowerPath.includes('\\texture\\')) return 'texture'
   if (lowerPath.includes('/script/') || lowerPath.includes('\\script\\')) return 'script'
   if (lowerPath.includes('/projectile/') || lowerPath.includes('\\projectile\\')) return 'projectile'
-  if (lowerPath.includes('/drop/') || lowerPath.includes('\\drop\\')) return 'drop'
+  if (lowerPath.includes('/drop') || lowerPath.includes('\\drop')) return 'drop'
   if (lowerPath.includes('/recipe/') || lowerPath.includes('\\recipe\\')) return 'recipe'
   if (lowerPath.includes('/barter/') || lowerPath.includes('\\barter\\')) return 'barter'
   if (lowerPath.includes('/prefab/') || lowerPath.includes('\\prefab\\')) return 'prefab'
   if (lowerPath.includes('/effect/') || lowerPath.includes('\\effect\\')) return 'effect'
   if (lowerPath.includes('/category/') || lowerPath.includes('\\category\\')) return 'category'
+  if (lowerPath.includes('/particle/') || lowerPath.includes('\\particle\\')) return 'particle'
   return 'other'
 }
 
@@ -137,8 +146,10 @@ export async function listServerAssets(options: ServerAssetListOptions): Promise
         continue
       }
       if (!entry.isFile()) continue
-      if (!entry.name.toLowerCase().endsWith('.json')) continue
-      if (entry.name.toLowerCase() === 'manifest.json') continue
+      const lowerName = entry.name.toLowerCase()
+      // Include .json and .ui files
+      if (!lowerName.endsWith('.json') && !lowerName.endsWith('.ui')) continue
+      if (lowerName === 'manifest.json') continue
       try {
         const asset = await buildServerAssetEntry(options.path, fullPath)
         assets.push(asset)
@@ -179,7 +190,10 @@ export async function createServerAsset(options: CreateServerAssetOptions): Prom
     throw new Error('Asset name cannot contain path separators.')
   }
 
-  const rawFileName = trimmedName.toLowerCase().endsWith('.json') ? trimmedName : `${trimmedName}.json`
+  // Determine file extension based on template type
+  const fileExtension = getTemplateFileExtension(options.template)
+  const hasExtension = trimmedName.toLowerCase().endsWith('.json') || trimmedName.toLowerCase().endsWith('.ui')
+  const rawFileName = hasExtension ? trimmedName : `${trimmedName}${fileExtension}`
   const fileName = rawFileName.replace(/[<>:"\\|?*]/g, '_')
 
   const filePath = path.join(destinationPath, fileName)
@@ -194,9 +208,19 @@ export async function createServerAsset(options: CreateServerAssetOptions): Prom
 
   const assetId = normalizeAssetId(fileName)
   const label = formatAssetLabel(fileName)
-  const templateBuilder = SERVER_ASSET_TEMPLATE_BUILDERS[options.template] ?? SERVER_ASSET_TEMPLATE_BUILDERS.empty
-  const template = templateBuilder(assetId || 'Example_Id', label || 'Example Asset')
-  await fs.writeFile(filePath, JSON.stringify(template, null, 2), 'utf-8')
+
+  // Use UI file builder for .ui templates, otherwise use JSON builder
+  if (isUiFileTemplate(options.template)) {
+    const uiBuilder = UI_FILE_TEMPLATE_BUILDERS[options.template]
+    if (uiBuilder) {
+      const content = uiBuilder(assetId || 'ExamplePage', label || 'Example Page')
+      await fs.writeFile(filePath, content, 'utf-8')
+    }
+  } else {
+    const templateBuilder = SERVER_ASSET_TEMPLATE_BUILDERS[options.template] ?? SERVER_ASSET_TEMPLATE_BUILDERS.empty
+    const template = templateBuilder(assetId || 'Example_Id', label || 'Example Asset')
+    await fs.writeFile(filePath, JSON.stringify(template, null, 2), 'utf-8')
+  }
 
   const asset = await buildServerAssetEntry(options.path, filePath)
 

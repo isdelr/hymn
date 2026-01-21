@@ -2,6 +2,58 @@ import type { ServerAssetTemplate } from '../../src/shared/hymn-types'
 
 type ServerAssetBuilder = (id: string, label: string) => Record<string, unknown>
 
+/**
+ * UI file template builders for .ui DSL format (non-JSON).
+ * These return string content instead of JSON objects.
+ */
+type UiFileBuilder = (id: string, label: string) => string
+
+export const UI_FILE_TEMPLATE_BUILDERS: Partial<Record<ServerAssetTemplate, UiFileBuilder>> = {
+  ui_page: (id, label) => `$C = "../Common.ui";
+$S = "../Sounds.ui";
+
+/* ${label} UI Page */
+$C.@PageOverlay {
+  $C.@Container {
+    Anchor: (Width: 400, Height: 300);
+
+    #Title {
+      Group {
+        $C.@Title { @Text = "${label.toUpperCase()}"; }
+      }
+    }
+
+    #Content {
+      LayoutMode: Top;
+      Padding: (Full: 20);
+
+      /* Add your UI elements here */
+      Label {
+        Text: "Hello from ${id}!";
+        FontSize: 14;
+      }
+    }
+  }
+}
+
+$C.@BackButton {}
+`,
+}
+
+/**
+ * Check if a template should use .ui file format instead of JSON.
+ */
+export function isUiFileTemplate(template: ServerAssetTemplate): boolean {
+  return template in UI_FILE_TEMPLATE_BUILDERS
+}
+
+/**
+ * Get the appropriate file extension for a template.
+ */
+export function getTemplateFileExtension(template: ServerAssetTemplate): string {
+  return isUiFileTemplate(template) ? '.ui' : '.json'
+}
+
 export const SERVER_ASSET_TEMPLATE_BUILDERS: Record<ServerAssetTemplate, ServerAssetBuilder> = {
   item: (id) => ({
     PlayerAnimationsId: 'Item',

@@ -1,8 +1,9 @@
 import { execa } from 'execa'
 import { pathExists, resolveJavaBinPath } from '../utils/fileSystem'
-import { readSetting, SETTINGS_KEYS } from '../core/database'
+import { readSetting, writeSetting, SETTINGS_KEYS } from '../core/database'
 import { resolveInstallInfo } from './InstallService'
 import type { CheckDependenciesResult, JavaDependencyInfo, HytaleDependencyInfo } from '../../src/shared/hymn-types'
+import { getGradleVersionForJdk } from '../../src/shared/hymn-types'
 
 /**
  * Run a command with arguments and capture output.
@@ -112,6 +113,17 @@ export async function checkDependencies(): Promise<CheckDependenciesResult> {
   const javaIssues: string[] = []
   if (!javaStatus.available) {
     javaIssues.push('Java JDK not found')
+  }
+
+  // Sync detected Java version to settings for Gradle compatibility
+  if (javaStatus.available && javaStatus.version) {
+    const majorMatch = javaStatus.version.match(/^(\d+)/)
+    if (majorMatch) {
+      const majorVersion = parseInt(majorMatch[1], 10)
+      await writeSetting(SETTINGS_KEYS.jdkMajorVersion, String(majorVersion))
+      const gradleVersion = getGradleVersionForJdk(majorVersion)
+      await writeSetting(SETTINGS_KEYS.gradleVersion, gradleVersion)
+    }
   }
 
   const java: JavaDependencyInfo = {

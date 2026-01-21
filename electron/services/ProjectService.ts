@@ -374,13 +374,20 @@ export async function createPack(options: CreatePackOptions): Promise<CreatePack
   if (options.includeCommon !== false) {
     await ensureDir(path.join(packPath, 'Common'))
     await ensureDir(path.join(packPath, 'Common', 'Icons', 'ItemsGenerated'))
+    await ensureDir(path.join(packPath, 'Common', 'Icons', 'CraftingCategories'))
     await ensureDir(path.join(packPath, 'Common', 'Items'))
     await ensureDir(path.join(packPath, 'Common', 'Blocks'))
+    await ensureDir(path.join(packPath, 'Common', 'Sounds'))
   }
 
   if (options.includeServer !== false) {
     await ensureDir(path.join(packPath, 'Server'))
     await ensureDir(path.join(packPath, 'Server', 'Item', 'Items'))
+    await ensureDir(path.join(packPath, 'Server', 'Block', 'Blocks'))
+    await ensureDir(path.join(packPath, 'Server', 'Entity', 'Entities'))
+    await ensureDir(path.join(packPath, 'Server', 'Drops'))
+    await ensureDir(path.join(packPath, 'Server', 'Recipe'))
+    await ensureDir(path.join(packPath, 'Server', 'Audio', 'SoundEvents'))
     await ensureDir(path.join(packPath, 'Server', 'Languages', 'en-US'))
   }
 

@@ -274,8 +274,9 @@ export async function downloadAndInstallJdk(
       throw new Error('JDK installation verification failed')
     }
 
-    // Save the managed JDK path
+    // Save the managed JDK path and major version
     await writeSetting(SETTINGS_KEYS.managedJdkPath, installDir)
+    await writeSetting(SETTINGS_KEYS.jdkMajorVersion, String(version))
 
     // Auto-configure Gradle version based on JDK version
     const gradleVersion = getGradleVersionForJdk(version)

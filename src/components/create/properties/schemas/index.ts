@@ -4,12 +4,18 @@ import type { AssetSchema } from '../types'
 import { itemSchema } from './itemSchema'
 import { blockSchema } from './blockSchema'
 import { entitySchema } from './entitySchema'
+import { dropSchema } from './dropSchema'
+import { recipeSchema } from './recipeSchema'
+import { audioSchema } from './audioSchema'
 
 // Schema registry
 const schemaRegistry: Record<string, AssetSchema> = {
   item: itemSchema,
   block: blockSchema,
   entity: entitySchema,
+  drop: dropSchema,
+  recipe: recipeSchema,
+  audio: audioSchema,
 }
 
 /**
@@ -31,3 +37,6 @@ export function registerSchema(schema: AssetSchema): void {
 export { itemSchema } from './itemSchema'
 export { blockSchema } from './blockSchema'
 export { entitySchema } from './entitySchema'
+export { dropSchema } from './dropSchema'
+export { recipeSchema } from './recipeSchema'
+export { audioSchema } from './audioSchema'

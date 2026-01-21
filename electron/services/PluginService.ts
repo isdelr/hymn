@@ -27,9 +27,12 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
   const safeName = pluginName.replace(/[^a-zA-Z0-9_-]/g, '')
   const group = options.group.trim() || 'com.example'
   const version = options.version?.trim() || '0.0.1'
-  const javaVersion = options.javaVersion ?? 25
+
+  // Read the detected JDK major version from settings, fall back to 21 if not set
+  const detectedJdkVersion = await readSetting(SETTINGS_KEYS.jdkMajorVersion)
+  const javaVersion = options.javaVersion ?? (detectedJdkVersion ? parseInt(detectedJdkVersion, 10) : 21)
+
   const patchline = options.patchline ?? 'release'
-  const includesAssetPack = options.includesAssetPack ?? true
 
   // Get configured Gradle version from settings
   const gradleVersion = (await readSetting(SETTINGS_KEYS.gradleVersion) as GradleVersion) || '9.3.0'
@@ -55,8 +58,15 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
 
   await ensureDir(javaSourcePath)
   await ensureDir(resourcesPath)
-  await ensureDir(serverResourcesPath)
   await ensureDir(gradleWrapperPath)
+
+  // Create asset folder structure
+  // Client assets (Common/)
+  await ensureDir(path.join(resourcesPath, 'Common', 'UI', 'Custom', 'Pages'))
+  await ensureDir(path.join(resourcesPath, 'Common', 'Sounds'))
+  await ensureDir(path.join(resourcesPath, 'Common', 'Icons'))
+  // Server assets
+  await ensureDir(serverResourcesPath)
 
   // Generate main class name from plugin name
   const mainClassName = safeName.charAt(0).toUpperCase() + safeName.slice(1)
@@ -78,7 +88,7 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
       version,
       group,
       javaVersion,
-      includesAssetPack,
+      includesAssetPack: true,
       patchline,
     }),
     'utf-8'
@@ -119,17 +129,20 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
     'utf-8'
   )
 
-  // Download gradle-wrapper.jar from official Gradle services
+  // Download gradle-wrapper.jar from official Gradle distributions
+  // See: https://services.gradle.org/distributions/
   const gradleWrapperJarPath = path.join(gradleWrapperPath, 'gradle-wrapper.jar')
   try {
-    const wrapperJarUrl = 'https://services.gradle.org/distributions/gradle-9.3.0-wrapper.jar'
+    // Official Gradle services URL: https://services.gradle.org/distributions/gradle-{VERSION}-wrapper.jar
+    const wrapperJarUrl = `https://services.gradle.org/distributions/gradle-${gradleVersion}-wrapper.jar`
     const response = await fetch(wrapperJarUrl)
     if (response.ok) {
       const buffer = await response.arrayBuffer()
       await fs.writeFile(gradleWrapperJarPath, Buffer.from(buffer))
     } else {
-      // Fallback: try GitHub raw URL
-      const altUrl = 'https://github.com/gradle/gradle/raw/v9.3.0/gradle/wrapper/gradle-wrapper.jar'
+      // Fallback: try GitHub raw URL (normalize version for tag, e.g., '8.5' -> 'v8.5.0')
+      const fullVersion = gradleVersion.split('.').length === 2 ? `${gradleVersion}.0` : gradleVersion
+      const altUrl = `https://github.com/gradle/gradle/raw/v${fullVersion}/gradle/wrapper/gradle-wrapper.jar`
       const altResponse = await fetch(altUrl)
       if (altResponse.ok) {
         const buffer = await altResponse.arrayBuffer()
@@ -142,6 +155,14 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
   }
 
   // manifest.json
+  // Build dependencies object from options
+  const dependencies: Record<string, string> = {}
+  if (options.dependencies && options.dependencies.length > 0) {
+    for (const dep of options.dependencies) {
+      dependencies[`Hytale:${dep}`] = '*'
+    }
+  }
+
   const manifest = {
     Group: group.split('.').pop() || safeName,
     Name: pluginName,
@@ -149,12 +170,12 @@ export async function createPlugin(options: CreatePluginOptions): Promise<Create
     Description: options.description?.trim() || `A Hytale plugin created with Hymn.`,
     Authors: options.authorName?.trim() ? [{ Name: options.authorName.trim() }] : [{ Name: 'Unknown' }],
     Website: '',
-    ServerVersion: '*',
-    Dependencies: {},
+    ServerVersion: options.serverVersion ?? '*',
+    Dependencies: dependencies,
     OptionalDependencies: {},
     DisabledByDefault: false,
     Main: fullMainClass,
-    IncludesAssetPack: includesAssetPack,
+    IncludesAssetPack: true,
   }
   const manifestPath = path.join(resourcesPath, 'manifest.json')
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 4), 'utf-8')

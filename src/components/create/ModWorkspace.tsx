@@ -154,13 +154,30 @@ export function ModWorkspace({ project, onBack, onProjectUpdated }: ModWorkspace
     const handleCreateAsset = async (name: string) => {
         if (!pendingTemplate) return
 
-        // Determine destination based on category mapping
+        // Map template categories to Hytale folder structure
         // Hytale expects Server assets under Server/<Category>/<SubCategory>/ paths
-        // e.g., Server/Item/Items/, Server/Block/Blocks/, Server/Entity/Entities/
-        let subfolder = 'Item/Items'
-        if (pendingTemplate.category === 'Blocks') subfolder = 'Block/Blocks'
-        if (pendingTemplate.category === 'Entities') subfolder = 'Entity/Entities'
-        if (pendingTemplate.category === 'Audio') subfolder = 'Audio/Sounds'
+        const categoryToPath: Record<string, string> = {
+            'Items': 'Item/Items',
+            'Tools': 'Item/Items',
+            'Armor': 'Item/Items',
+            'Consumables': 'Item/Items',
+            'Blocks': 'Block/Blocks',
+            'Entities': 'Entity/Entities',
+            'Audio': 'Audio/SoundEvents',
+            'Interface': 'UI',
+            'Data': 'Item/Items', // Default for Data, will be overridden below
+        }
+
+        // Template-specific overrides for Data category
+        const templateToPath: Record<string, string> = {
+            'drop_weighted': 'Drops',
+            'recipe_shaped': 'Recipe',
+            'recipe_shapeless': 'Recipe',
+            'barter_shop': 'Barter',
+            'projectile': 'Projectile',
+        }
+
+        const subfolder = templateToPath[pendingTemplate.id] ?? categoryToPath[pendingTemplate.category] ?? 'Item/Items'
 
         const result = await createAsset.mutateAsync({
             projectPath: project.path,

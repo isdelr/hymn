@@ -62,7 +62,7 @@ export interface ModBuildResult {
   truncated: boolean
 }
 
-export type ServerAssetKind = 'item' | 'block' | 'entity' | 'audio' | 'ui' | 'model' | 'texture' | 'script' | 'category' | 'projectile' | 'drop' | 'recipe' | 'barter' | 'prefab' | 'effect' | 'other'
+export type ServerAssetKind = 'item' | 'block' | 'entity' | 'audio' | 'ui' | 'model' | 'texture' | 'script' | 'category' | 'projectile' | 'drop' | 'recipe' | 'barter' | 'prefab' | 'effect' | 'hitbox' | 'group' | 'quality' | 'animation' | 'interaction' | 'particle' | 'other'
 
 export interface ServerAsset {
   id: string
@@ -115,6 +115,10 @@ export type JavaClassTemplate =
   | 'event_listener'    // Game event listener
   | 'component'         // Entity component
   | 'custom_class'      // Empty class template
+  | 'gui_page'          // Custom UI page handler
+  | 'config'            // Plugin configuration manager
+  | 'event_system'      // Game event processor (static handlers)
+  | 'interaction'       // Custom item interaction
 
 export interface CreateJavaClassOptions {
   projectPath: string          // Root path of the plugin project
@@ -356,15 +360,23 @@ export interface CreatePackResult {
   manifestPath: string
 }
 
+// Known Hytale module dependencies for plugins
+export type HytaleModuleDependency =
+  | 'EntityModule'
+  | 'AssetModule'
+  | 'AccessControlModule'
+  | 'InteractionModule'
+
 export interface CreatePluginOptions {
   name: string
   group: string // e.g., "com.example" - required for Java package structure
   version?: string
   description?: string
   authorName?: string
-  includesAssetPack?: boolean
   patchline?: 'release' | 'pre-release'
   javaVersion?: number
+  dependencies?: HytaleModuleDependency[]  // Hytale module dependencies
+  serverVersion?: string                    // e.g., '*' or '>=2026.1.0'
 }
 
 export interface CreatePluginResult {

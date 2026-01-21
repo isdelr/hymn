@@ -5,7 +5,6 @@ import {
   SortAsc,
   Server,
   Coffee,
-  Cog,
   Download,
   X,
   FolderOpen,
@@ -248,7 +247,7 @@ export function SettingsSection() {
         </div>
       </SettingRow>
 
-      {/* Row 3: JDK */}
+      {/* Row 3: JDK & Gradle (Build Tools) */}
       <SettingRow>
         <IconBox colorClass="bg-orange-500/10">
           <Coffee className="h-5 w-5 text-orange-500" />
@@ -279,7 +278,12 @@ export function SettingsSection() {
               </p>
               {isJdkFound && jdkVersion && (
                 <p className="text-xs text-muted-foreground/70 mt-0.5">
-                  {isUsingCustomJdk ? 'Custom' : 'Auto-detected'} - Java {jdkVersion}
+                  {isUsingCustomJdk ? 'Custom' : 'Auto-detected'} - Java {jdkVersion} · Gradle {gradleVersion}
+                </p>
+              )}
+              {!isJdkFound && (
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                  Gradle {gradleVersion} will be used once JDK is configured
                 </p>
               )}
             </>
@@ -331,20 +335,7 @@ export function SettingsSection() {
         </div>
       </SettingRow>
 
-      {/* Row 4: Gradle Version (auto-configured) */}
-      <SettingRow>
-        <IconBox colorClass="bg-teal-500/10">
-          <Cog className="h-5 w-5 text-teal-500" />
-        </IconBox>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium">Gradle Version</span>
-          <p className="text-xs text-muted-foreground">
-            {gradleVersion} - auto-configured for JDK compatibility
-          </p>
-        </div>
-      </SettingRow>
-
-      {/* Row 5: Theme */}
+      {/* Row 4: Theme */}
       <SettingRow>
         <IconBox colorClass="bg-violet-500/10">
           <Palette className="h-5 w-5 text-violet-500" />
@@ -367,7 +358,7 @@ export function SettingsSection() {
         </Select>
       </SettingRow>
 
-      {/* Row 6: Mod Sort Order */}
+      {/* Row 5: Mod Sort Order */}
       <SettingRow>
         <IconBox colorClass="bg-emerald-500/10">
           <SortAsc className="h-5 w-5 text-emerald-500" />
@@ -390,7 +381,7 @@ export function SettingsSection() {
         </Select>
       </SettingRow>
 
-      {/* Row 7: About */}
+      {/* Row 6: About */}
       <SettingRow>
         <IconBox colorClass="bg-gray-500/10">
           <Info className="h-5 w-5 text-gray-500" />

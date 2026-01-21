@@ -22,6 +22,7 @@ export const SETTINGS_KEYS = {
   jdkPath: 'jdk_path',
   managedJdkPath: 'managed_jdk_path',
   gradleVersion: 'gradle_version',
+  jdkMajorVersion: 'jdk_major_version',
 } as const
 
 export function getDatabasePath(): string {

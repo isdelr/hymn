@@ -35,6 +35,9 @@ import {
   Terminal,
   Radio,
   FileCode,
+  Settings,
+  Zap,
+  MousePointer,
 } from 'lucide-react'
 import type { ServerAssetIconName } from '@/shared/templates/serverAssetTemplates'
 import type { JavaClassIconName } from '@/shared/templates/javaClassTemplates'
@@ -88,6 +91,10 @@ export const JAVA_CLASS_ICONS: Record<JavaClassIconName, IconComponent> = {
   Radio,
   Puzzle,
   FileCode,
+  Layout,
+  Settings,
+  Zap,
+  MousePointer,
 }
 
 /**

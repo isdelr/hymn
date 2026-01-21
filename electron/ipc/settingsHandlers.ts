@@ -97,6 +97,7 @@ export function registerSettingsHandlers(): void {
     // Auto-configure Gradle version based on detected JDK version
     const majorVersion = await getJavaMajorVersion(selectedPath)
     if (majorVersion !== null) {
+      await writeSetting(SETTINGS_KEYS.jdkMajorVersion, String(majorVersion))
       const gradleVersion = getGradleVersionForJdk(majorVersion)
       await writeSetting(SETTINGS_KEYS.gradleVersion, gradleVersion)
     }
