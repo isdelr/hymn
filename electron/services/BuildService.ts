@@ -3,7 +3,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import JSZip from 'jszip'
 import { shell } from 'electron'
-import { pathExists, ensureDir } from '../utils/fileSystem'
+import { pathExists, ensureDir, resolveJavaHomePath } from '../utils/fileSystem'
 import { runCommand } from '../utils/command'
 import { getBuildsRoot, getPluginBuildsRoot, getPackBuildsRoot } from '../core/paths'
 import { readSetting, SETTINGS_KEYS } from '../core/database'
@@ -144,13 +144,20 @@ export async function buildPlugin(options: BuildPluginOptions): Promise<BuildPlu
   const managedJdkPath = await readSetting(SETTINGS_KEYS.managedJdkPath)
 
   // Set JAVA_HOME environment if custom path exists
+  // resolveJavaHomePath handles macOS .jdk bundle structure (Contents/Home)
   const env = { ...process.env }
   if (customJdkPath && (await pathExists(customJdkPath))) {
-    env.JAVA_HOME = customJdkPath
-    env.PATH = `${path.join(customJdkPath, 'bin')}${path.delimiter}${env.PATH}`
+    const javaHome = await resolveJavaHomePath(customJdkPath)
+    if (javaHome) {
+      env.JAVA_HOME = javaHome
+      env.PATH = `${path.join(javaHome, 'bin')}${path.delimiter}${env.PATH}`
+    }
   } else if (managedJdkPath && (await pathExists(managedJdkPath))) {
-    env.JAVA_HOME = managedJdkPath
-    env.PATH = `${path.join(managedJdkPath, 'bin')}${path.delimiter}${env.PATH}`
+    const javaHome = await resolveJavaHomePath(managedJdkPath)
+    if (javaHome) {
+      env.JAVA_HOME = javaHome
+      env.PATH = `${path.join(javaHome, 'bin')}${path.delimiter}${env.PATH}`
+    }
   }
 
   // Run gradle build
