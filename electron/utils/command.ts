@@ -16,7 +16,8 @@ export interface CommandResult {
 export async function runCommand(
   command: string,
   args: string[],
-  cwd: string
+  cwd: string,
+  env?: NodeJS.ProcessEnv
 ): Promise<CommandResult> {
   const startedAt = Date.now()
 
@@ -24,6 +25,7 @@ export async function runCommand(
     cwd,
     reject: false, // Don't throw on non-zero exit code
     all: true, // Combine stdout and stderr
+    ...(env && { env }),
   })
 
   let output = result.all ?? ''

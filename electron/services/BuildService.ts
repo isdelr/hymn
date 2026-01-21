@@ -154,7 +154,7 @@ export async function buildPlugin(options: BuildPluginOptions): Promise<BuildPlu
   }
 
   // Run gradle build
-  const result = await runCommand(gradleCommand, ['jar'], projectPath)
+  const result = await runCommand(gradleCommand, ['jar'], projectPath, env)
 
   if (result.exitCode !== 0) {
     return {
