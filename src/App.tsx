@@ -1,17 +1,12 @@
 import { useEffect } from 'react'
 import { createRouter, RouterProvider, createHashHistory } from '@tanstack/react-router'
-import { loader } from '@monaco-editor/react'
 import { Toaster } from '@/components/ui/sonner'
 import { setupBeforeUnloadWarning } from '@/stores'
 import { FileWatcherProvider } from '@/providers/FileWatcherProvider'
 import { routeTree } from './routeTree.gen'
 
-// Configure Monaco to load from CDN (fixes hash-router path resolution issues)
-loader.config({
-  paths: {
-    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'
-  }
-})
+// Configure Monaco web workers for Vite (must be imported before any Editor component)
+import '@/lib/monaco-workers'
 
 // Create a new router instance with hash history for Electron compatibility
 const hashHistory = createHashHistory()

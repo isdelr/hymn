@@ -31,11 +31,12 @@ let win: BrowserWindow | null = null
 // - connect-src localhost in dev: Required for Vite dev server communication
 const DEVELOPMENT_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' ws://localhost:* http://localhost:*",
+  "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -46,11 +47,12 @@ const DEVELOPMENT_CSP = [
 // Note: connect-src includes GitHub for auto-update status communication
 const PRODUCTION_CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.github.com https://github.com",
+  "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
