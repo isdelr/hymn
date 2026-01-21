@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import type { FieldProps } from '../types'
 
-interface Vector3Value {
+export interface Vector3Value {
   X: number
   Y: number
   Z: number

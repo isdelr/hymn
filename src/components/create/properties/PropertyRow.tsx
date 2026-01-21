@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import type { PropertyRowProps, PropertyType } from './types'
+import type { FieldProps, PropertyRowProps, PropertyType } from './types'
+import type { Vector3Value } from './fields/Vector3Field'
 
 // Field components - use registry to render the right field
 import {
@@ -46,25 +47,25 @@ export const PropertyRow = memo(function PropertyRow({
 
     switch (schema.type) {
       case 'string':
-        return <StringField {...fieldProps} />
+        return <StringField {...(fieldProps as FieldProps<string>)} />
       case 'number':
-        return <NumberField {...fieldProps} />
+        return <NumberField {...(fieldProps as FieldProps<number>)} />
       case 'boolean':
-        return <BooleanField {...fieldProps} />
+        return <BooleanField {...(fieldProps as FieldProps<boolean>)} />
       case 'select':
-        return <SelectField {...fieldProps} />
+        return <SelectField {...(fieldProps as FieldProps<string>)} />
       case 'compute':
         return <ComputeField {...fieldProps} />
       case 'path':
-        return <PathField {...fieldProps} />
+        return <PathField {...(fieldProps as FieldProps<string>)} />
       case 'vector3':
-        return <Vector3Field {...fieldProps} />
+        return <Vector3Field {...(fieldProps as FieldProps<Vector3Value>)} />
       case 'array':
-        return <ArrayField {...fieldProps} />
+        return <ArrayField {...(fieldProps as FieldProps<unknown[]>)} />
       case 'object':
-        return <ObjectField {...fieldProps} />
+        return <ObjectField {...(fieldProps as FieldProps<Record<string, unknown>>)} />
       default:
-        return <StringField {...fieldProps} />
+        return <StringField {...(fieldProps as FieldProps<string>)} />
     }
   }, [value, onChange, schema, path, modRoot])
 
