@@ -41,6 +41,8 @@ jobs:
         run: bun run test
 
       - name: Build application
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: bun run build:compile
 
       - name: Build Electron (macOS)
